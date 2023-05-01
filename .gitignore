@@ -1,5 +1,6 @@
 # Secrets and internal config files
 **/.secrets/*
+poetry.lock
 
 # Ignore meltano internal cache and sqlite systemdb
 
