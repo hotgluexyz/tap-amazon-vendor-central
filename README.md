@@ -1,6 +1,6 @@
-# tap-amazon-seller
+# tap-amazon-vendor-central
 
-`tap-amazon-seller` is a Singer tap for Amazon-Seller.
+`tap-amazon-vendor-central` is a Singer tap for Amazon-Vendor-Central.
 
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
@@ -9,7 +9,7 @@ Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 - [ ] `Developer TODO:` Update the below as needed to correctly describe the install procedure. For instance, if you do not have a PyPi repo, or if you want users to directly install from your git repo, you can modify this step as appropriate.
 
 ```bash
-pipx install tap-amazon-seller
+pipx install tap-amazon-vendor-central
 ```
 
 ## Configuration
@@ -22,7 +22,7 @@ A full list of supported settings and capabilities for this
 tap is available by running:
 
 ```bash
-tap-amazon-seller --about
+tap-amazon-vendor-central --about
 ```
 
 ### Source Authentication and Authorization
@@ -31,14 +31,14 @@ tap-amazon-seller --about
 
 ## Usage
 
-You can easily run `tap-amazon-seller` by itself or in a pipeline using [Meltano](https://meltano.com/).
+You can easily run `tap-amazon-vendor-central` by itself or in a pipeline using [Meltano](https://meltano.com/).
 
 ### Executing the Tap Directly
 
 ```bash
-tap-amazon-seller --version
-tap-amazon-seller --help
-tap-amazon-seller --config CONFIG --discover > ./catalog.json
+tap-amazon-vendor-central --version
+tap-amazon-vendor-central --help
+tap-amazon-vendor-central --config CONFIG --discover > ./catalog.json
 ```
 
 ## Developer Resources
@@ -61,10 +61,10 @@ Create tests within the `tap_amazon_seller/tests` subfolder and
 poetry run pytest
 ```
 
-You can also test the `tap-amazon-seller` CLI interface directly using `poetry run`:
+You can also test the `tap-amazon-vendor-central` CLI interface directly using `poetry run`:
 
 ```bash
-poetry run tap-amazon-seller --help
+poetry run tap-amazon-vendor-central --help
 ```
 
 ### Testing with [Meltano](https://www.meltano.com)
@@ -81,7 +81,7 @@ Next, install Meltano (if you haven't already) and any needed plugins:
 # Install meltano
 pipx install meltano
 # Initialize meltano within this directory
-cd tap-amazon-seller
+cd tap-amazon-vendor-central
 meltano install
 ```
 
@@ -89,9 +89,9 @@ Now you can test and orchestrate using Meltano:
 
 ```bash
 # Test invocation:
-meltano invoke tap-amazon-seller --version
+meltano invoke tap-amazon-vendor-central --version
 # OR run a test `elt` pipeline:
-meltano elt tap-amazon-seller target-jsonl
+meltano elt tap-amazon-vendor-central target-jsonl
 ```
 
 ### SDK Dev Guide
