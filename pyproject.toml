@@ -36,4 +36,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 # CLI declaration
-tap-amazon-seller = 'tap_amazon_seller.tap:TapAmazonSeller.cli'
+tap-amazon-vendor-central = 'tap_amazon_vendor_central.tap:TapAmazonVendorCentral.cli'
