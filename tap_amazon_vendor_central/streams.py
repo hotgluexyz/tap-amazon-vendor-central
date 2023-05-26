@@ -13,7 +13,6 @@ from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 
 
-
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
 
@@ -64,20 +63,10 @@ class MarketplacesStream(AmazonSellerStream):
                 "AU",
                 "JP",
             ]
-        # orders = self.get_sp_orders()
-        # Fetch minimum number of orders and verify credentials are working
-        today_date = datetime.today().strftime("%Y-%m-%d")
+
         for mp in marketplaces:
-            try:
-                orders = self.get_sp_orders(mp)
-                allorders = orders.get_orders(CreatedAfter=today_date)
-                yield {"id": mp}
-            except:
-                output = f"marketplace {mp} not part of current SP account"
+            yield {"id": mp}
 
-
-
-    
 
 class ProductsIventoryStream(AmazonSellerStream):
     """Define custom stream."""
@@ -135,9 +124,9 @@ class ProductsIventoryStream(AmazonSellerStream):
             return {
                 "ASIN": record["product-id"],
                 "marketplace_id": context.get("marketplace_id"),
-            }    
+            }
         else:
-            return []    
+            return []
 
     @backoff.on_exception(
         backoff.expo,
@@ -148,7 +137,7 @@ class ProductsIventoryStream(AmazonSellerStream):
     @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         try:
-            start_date = self.get_starting_timestamp(context) or datetime(2005, 1, 1)
+            start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
             end_date = None
             if self.config.get("start_date"):
                 start_date = datetime.strptime(
@@ -193,7 +182,9 @@ class ProductsIventoryStream(AmazonSellerStream):
                 reports = self.check_report(row["reportId"], report)
                 for report_row in reports:
                     if context is not None:
-                        report_row.update({marketplace_id:context.get('marketplace_id')})
+                        report_row.update(
+                            {marketplace_id: context.get("marketplace_id")}
+                        )
                     yield report_row
 
         except Exception as e:
@@ -218,7 +209,7 @@ class ProductDetails(AmazonSellerStream):
         th.Property("SalesRankings", th.CustomType({"type": ["array", "string"]})),
         th.Property("marketplace_id", th.StringType),
     ).to_dict()
-    
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -231,48 +222,59 @@ class ProductDetails(AmazonSellerStream):
             # if context is not None:
             asin = context.get("ASIN")
             catalog = self.get_sp_catalog(context.get("marketplace_id"))
-            if context.get("marketplace_id") =='JP':
+            if context.get("marketplace_id") == "JP":
                 items = catalog.list_items(JAN=asin).payload
-            elif context.get("marketplace_id") in ['FR']:
-                items = catalog.list_items(EAN=asin).payload     
+            elif context.get("marketplace_id") in ["FR"]:
+                items = catalog.list_items(EAN=asin).payload
             else:
                 items = catalog.get_item(asin=asin).payload
             if "Items" in items:
-                    if len(items['Items'])>0:
-                        items = items['Items'][0]    
+                if len(items["Items"]) > 0:
+                    items = items["Items"][0]
             items.update({"ASIN": asin})
             items.update({"marketplace_id": context.get("marketplace_id")})
             return [items]
             # else:
-            #     return []    
+            #     return []
         except Exception as e:
             raise InvalidResponse(e)
+
 
 class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
     """Define custom stream."""
 
     name = "vendor_fulfilment_purchase_orders"
     primary_keys = ["purchaseOrderNumber"]
-    #TODO loook for relevant replication key in the live data
+    # TODO loook for relevant replication key in the live data
     replication_key = None
     parent_stream_type = MarketplacesStream
     marketplace_id = "{marketplace_id}"
 
     schema = th.PropertiesList(
         th.Property("purchaseOrderNumber", th.StringType),
-        #Optional, not always populated
-        th.Property("orderDetails", th.ObjectType(
-            th.Property("customerOrderNumber", th.StringType),
-            th.Property("orderDate", th.DateTimeType),
-            th.Property("orderStatus", th.StringType),
-            th.Property("shipmentDetails", th.CustomType({"type": ["object", "string"]})),
-            th.Property("taxTotal", th.CustomType({"type": ["object", "string"]})),
-            th.Property("sellingParty", th.CustomType({"type": ["object", "string"]})),
-            th.Property("shipToParty", th.CustomType({"type": ["object", "string"]})),
-            th.Property("billToParty", th.CustomType({"type": ["object", "string"]})),
-            th.Property("items", th.CustomType({"type": ["array", "string"]})),
-        )),
-    
+        # Optional, not always populated
+        th.Property(
+            "orderDetails",
+            th.ObjectType(
+                th.Property("customerOrderNumber", th.StringType),
+                th.Property("orderDate", th.DateTimeType),
+                th.Property("orderStatus", th.StringType),
+                th.Property(
+                    "shipmentDetails", th.CustomType({"type": ["object", "string"]})
+                ),
+                th.Property("taxTotal", th.CustomType({"type": ["object", "string"]})),
+                th.Property(
+                    "sellingParty", th.CustomType({"type": ["object", "string"]})
+                ),
+                th.Property(
+                    "shipToParty", th.CustomType({"type": ["object", "string"]})
+                ),
+                th.Property(
+                    "billToParty", th.CustomType({"type": ["object", "string"]})
+                ),
+                th.Property("items", th.CustomType({"type": ["array", "string"]})),
+            ),
+        ),
     ).to_dict()
 
     @backoff.on_exception(
@@ -301,7 +303,7 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
 
         for page in self.load_all_orders(mp, **kwargs):
             orders = []
-            for order in page.payload.get("Orders"):
+            for order in page.payload.get("Orders", []):
                 orders.append(order)
 
             yield orders
@@ -322,9 +324,8 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
                     self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
             else:
-                #End date required by the endpoint
-                end_date =datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ") 
-  
+                # End date required by the endpoint
+                end_date = datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
             sandbox = self.config.get("sandbox", False)
             if sandbox is True:
@@ -333,7 +334,9 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
                 )
             else:
                 rows = self.load_order_page(
-                    mp=context.get("marketplace_id"),createdBefore=end_date,createdAfter=start_date
+                    mp=context.get("marketplace_id"),
+                    createdBefore=end_date,
+                    createdAfter=start_date,
                 )
             for row in rows:
                 for item in row:
@@ -341,12 +344,13 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
         except Exception as e:
             raise InvalidResponse(e)
 
+
 class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
     """Define custom stream."""
 
     name = "vendor_fulfilment_customer_invoices"
     primary_keys = ["purchaseOrderNumber"]
-    #TODO loook for relevant key in live data
+    # TODO loook for relevant key in live data
     replication_key = None
     parent_stream_type = MarketplacesStream
     marketplace_id = "{marketplace_id}"
@@ -358,7 +362,6 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
         th.Property("shipFromParty", th.CustomType({"type": ["object", "string"]})),
         th.Property("labelFormat", th.CustomType({"type": ["object", "string"]})),
         th.Property("labelData", th.CustomType({"type": ["array", "string"]})),
-    
     ).to_dict()
 
     @backoff.on_exception(
@@ -375,7 +378,7 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
         """
         try:
             vendor_shipping = self.get_sp_vendor_fulfilment_shipping(mp)
-            invoices_obj = vendor_shipping.get_orders(**kwargs)
+            invoices_obj = vendor_shipping.get_customer_invoices(**kwargs)
             return invoices_obj
         except Exception as e:
             raise InvalidResponse(e)
@@ -408,9 +411,8 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
                     self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
             else:
-                #End date required by the endpoint
-                end_date =datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ") 
- 
+                # End date required by the endpoint
+                end_date = datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
             sandbox = self.config.get("sandbox", False)
             if sandbox is True:
@@ -419,7 +421,9 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
                 )
             else:
                 rows = self.load_order_page(
-                    mp=context.get("marketplace_id"),createdBefore=end_date,createdAfter=start_date
+                    mp=context.get("marketplace_id"),
+                    # createdBefore=end_date,
+                    # createdAfter=start_date,
                 )
             for row in rows:
                 for item in row:
@@ -427,12 +431,13 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
         except Exception as e:
             raise InvalidResponse(e)
 
+
 class VendorPurchaseOrdersStream(AmazonSellerStream):
     """Define custom stream."""
 
     name = "vendor_purchase_orders"
     primary_keys = ["purchaseOrderNumber"]
-    #TODO loook for relevant replication key in the live data
+    # TODO loook for relevant replication key in the live data
     replication_key = None
     parent_stream_type = MarketplacesStream
     marketplace_id = "{marketplace_id}"
@@ -440,11 +445,10 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
     schema = th.PropertiesList(
         th.Property("purchaseOrderNumber", th.StringType),
         th.Property("purchaseOrderState", th.StringType),
-        #Optional, not always populated
+        # Optional, not always populated
         th.Property("orderDetails", th.CustomType({"type": ["object", "string"]})),
         th.Property("deliveryWindow", th.StringType),
         th.Property("items", th.CustomType({"type": ["array", "string"]})),
-    
     ).to_dict()
 
     @backoff.on_exception(
@@ -470,10 +474,9 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         """
         a generator function to return all pages, obtained by NextToken
         """
-
         for page in self.load_all_orders(mp, **kwargs):
             orders = []
-            for order in page.payload.get("Orders"):
+            for order in page.payload.get("orders", []):
                 orders.append(order)
 
             yield orders
@@ -487,16 +490,15 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         try:
             # Get start_date
-            start_date = self.get_starting_timestamp(context) or datetime.today()
+            start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
             start_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
             if self.config.get("end_date"):
                 end_date = datetime.strptime(
                     self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
             else:
-                #End date required by the endpoint
-                end_date =datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ") 
-  
+                # End date required by the endpoint
+                end_date = datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
             sandbox = self.config.get("sandbox", False)
             if sandbox is True:
@@ -505,10 +507,13 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
                 )
             else:
                 rows = self.load_order_page(
-                    mp=context.get("marketplace_id"),createdAfter=start_date,limit=100, SortOrder = "DESC"
+                    mp=context.get("marketplace_id"),
+                    createdAfter=start_date,
+                    limit=100,
+                    SortOrder="DESC",
                 )
             for row in rows:
                 for item in row:
                     yield item
         except Exception as e:
-            raise InvalidResponse(e)  
+            raise InvalidResponse(e)

@@ -4,7 +4,16 @@
 from typing import Any, List, Optional, cast
 
 from singer_sdk.streams import Stream
-from sp_api.api import Finances, Inventories, Orders, ReportsV2, Catalog,VendorDirectFulfillmentOrders, VendorDirectFulfillmentShipping, VendorOrders
+from sp_api.api import (
+    Finances,
+    Inventories,
+    Orders,
+    ReportsV2,
+    Catalog,
+    VendorDirectFulfillmentOrders,
+    VendorDirectFulfillmentShipping,
+    VendorOrders,
+)
 from sp_api.base import Marketplaces
 import csv
 import os
@@ -40,7 +49,6 @@ def get_state_if_exists(
     state_partition_context: Optional[dict] = None,
     key: Optional[str] = None,
 ) -> Optional[Any]:
-
     if "bookmarks" not in tap_state:
         return None
     if tap_stream_id not in tap_state["bookmarks"]:
@@ -138,7 +146,7 @@ class AmazonSellerStream(Stream):
         return Inventories(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
- 
+
     def create_report(
         self, start_date, reports, end_date=None, type="GET_LEDGER_DETAIL_VIEW_DATA"
     ):
@@ -155,7 +163,7 @@ class AmazonSellerStream(Stream):
                 self.report_id = res["reportId"]
                 return self.check_report(res["reportId"], reports)
         except Exception as e:
-            raise InvalidResponse(e)    
+            raise InvalidResponse(e)
 
     def get_report(self, report_id, reports):
         return reports.get_report(report_id)
@@ -195,7 +203,9 @@ class AmazonSellerStream(Stream):
                 res = self.read_csv(f"./{document_id}_document.csv")
                 break
             elif report["processingStatus"] == "FATAL":
-                self.logger.warning(f"Report {report_id} failed with FATAL status. Skipping...")
+                self.logger.warning(
+                    f"Report {report_id} failed with FATAL status. Skipping..."
+                )
                 break
             else:
                 time.sleep(30)
@@ -209,22 +219,22 @@ class AmazonSellerStream(Stream):
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
 
-    def translate_report(self,row):
+    def translate_report(self, row):
         translate = {
-            "\x8f¤\x95i\x96¼":"item-name",
-            "\x8fo\x95iID":"listing-id",
-            "\x8fo\x95i\x8eÒSKU":"seller-sku",
-            "\x89¿\x8ai":"price",
-            "\x90\x94\x97Ê":"quantity",
-            "\x8fo\x95i\x93ú":"open-date",
-            "\x8f¤\x95iID\x83^\x83C\x83v":"product-id-type",
-            "\x8f¤\x95iID":"asin1",
-            "\x83t\x83\x8b\x83t\x83B\x83\x8b\x83\x81\x83\x93\x83g\x81E\x83`\x83\x83\x83\x93\x83l\x83\x8b":"fulfilment-channel",
-            "\x83X\x83e\x81[\x83^\x83X":"status",
-            "\x8fo\x95i\x93ú":"open-date",
+            "\x8f¤\x95i\x96¼": "item-name",
+            "\x8fo\x95iID": "listing-id",
+            "\x8fo\x95i\x8eÒSKU": "seller-sku",
+            "\x89¿\x8ai": "price",
+            "\x90\x94\x97Ê": "quantity",
+            "\x8fo\x95i\x93ú": "open-date",
+            "\x8f¤\x95iID\x83^\x83C\x83v": "product-id-type",
+            "\x8f¤\x95iID": "asin1",
+            "\x83t\x83\x8b\x83t\x83B\x83\x8b\x83\x81\x83\x93\x83g\x81E\x83`\x83\x83\x83\x93\x83l\x83\x8b": "fulfilment-channel",
+            "\x83X\x83e\x81[\x83^\x83X": "status",
+            "\x8fo\x95i\x93ú": "open-date",
         }
         return_translated = False
-        translated = {}    
+        translated = {}
         for key in translate.keys():
             if key in row:
                 return_translated = True
@@ -232,25 +242,25 @@ class AmazonSellerStream(Stream):
         if return_translated is True:
             return translated
         else:
-            return row             
+            return row
 
     def get_sp_vendor_fulfilment(self, marketplace_id=None):
-            if marketplace_id is None:
-                marketplace_id = self.config.get("marketplace", "US")
-            return VendorDirectFulfillmentOrders(
-                credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
-            )
-    
+        if marketplace_id is None:
+            marketplace_id = self.config.get("marketplace", "US")
+        return VendorDirectFulfillmentOrders(
+            credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
+        )
+
     def get_sp_vendor_fulfilment_shipping(self, marketplace_id=None):
-            if marketplace_id is None:
-                marketplace_id = self.config.get("marketplace", "US")
-            return VendorDirectFulfillmentShipping(
-                credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
-            )
-    
+        if marketplace_id is None:
+            marketplace_id = self.config.get("marketplace", "US")
+        return VendorDirectFulfillmentShipping(
+            credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
+        )
+
     def get_sp_vendor(self, marketplace_id=None):
-            if marketplace_id is None:
-                marketplace_id = self.config.get("marketplace", "US")
-            return VendorOrders(
-                credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
-            )
+        if marketplace_id is None:
+            marketplace_id = self.config.get("marketplace", "US")
+        return VendorOrders(
+            credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
+        )
