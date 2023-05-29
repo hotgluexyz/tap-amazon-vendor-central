@@ -16,7 +16,7 @@ from sp_api.base import Marketplaces
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
 
-    name = "marketplaces"
+    name = "vendor_marketplaces"
     primary_keys = ["id"]
     replication_key = None
     schema = th.PropertiesList(
