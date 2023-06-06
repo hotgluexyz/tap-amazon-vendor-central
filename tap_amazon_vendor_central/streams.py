@@ -1,5 +1,6 @@
 """Stream type classes for tap-amazon-seller."""
-from datetime import datetime
+from datetime import datetime, timedelta
+
 from typing import Iterable, Optional
 
 import backoff
@@ -517,3 +518,86 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
                     yield item
         except Exception as e:
             raise InvalidResponse(e)
+
+class VendorsSalesReportStream(AmazonSellerStream):
+    """Define custom stream."""
+
+    name = "vendor_sales_report"
+    primary_keys = None
+    replication_key = None
+    report_id = None
+    document_id = None
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("salesAggregate", th.CustomType({"type": ["array", "string"]})),
+        th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
+    ).to_dict()   
+
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=3,
+    )
+    # @timeout(15)
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        try:
+           
+            start_date = self.get_starting_timestamp(context) or datetime(2005, 1, 1)
+            end_date = None
+            if self.config.get("start_date"):
+                start_date = datetime.strptime(
+                    self.config.get("start_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
+                )
+            current_date = datetime.now()
+            minimum_start_date = current_date - timedelta(days=1460)
+            if start_date < minimum_start_date:
+                #Reset start date to days limit if it is greater than 1460 days
+                start_date = current_date - timedelta(days=1460)
+        
+            end_date = start_date + timedelta(days=14)
+            
+            report_types = ["GET_VENDOR_SALES_REPORT"]
+            processing_status = self.config.get("processing_status")
+            #Get list of valid marketplaces
+            
+            marketplace_id = None
+            if context is not None:
+                marketplace_id = context.get("marketplace_id")
+           
+           
+            report = self.get_sp_reports(marketplace_id=marketplace_id)
+            while start_date <= current_date:
+                start_date_f = start_date.strftime("%Y-%m-%dT00:00:00")
+                end_date_f = end_date.strftime("%Y-%m-%dT23:59:59")
+                items = report.get_reports(
+                    reportTypes=report_types,
+                    processingStatuses=processing_status,
+                    dataStartTime=start_date_f,
+                    dataEndTime=end_date_f,
+                ).payload
+                
+                if not items["reports"]:
+                    reports = self.create_report(
+                        start_date_f, report, end_date_f, "GET_VENDOR_SALES_REPORT",
+                        reportOptions={"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"},
+                        report_type="json"
+                    )
+                    for row in reports:
+                        yield row
+
+                # If reports are form loop through, download documents and populate the data.txt
+                for row in items["reports"]:
+                    reports = self.check_report(row["reportId"], report,"json")
+                    for report_row in reports:
+                        if context is not None:
+                            report_row.update({marketplace_id:context.get('marketplace_id')})
+                        yield report_row
+                # Move to the next time period
+                start_date = end_date + timedelta(days=1)
+                end_date += timedelta(days=14)
+                do_something = ""
+
+        except Exception as e:
+            raise InvalidResponse(e)         
