@@ -9,6 +9,7 @@ from sp_api.api import (
     Inventories,
     Orders,
     ReportsV2,
+    Reports,
     Catalog,
     VendorDirectFulfillmentOrders,
     VendorDirectFulfillmentShipping,
@@ -19,6 +20,7 @@ import csv
 import os
 import time
 from tap_amazon_vendor_central.utils import InvalidResponse
+import json
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
 
@@ -148,12 +150,12 @@ class AmazonSellerStream(Stream):
         )
 
     def create_report(
-        self, start_date, reports, end_date=None, type="GET_LEDGER_DETAIL_VIEW_DATA"
+        self, start_date, reports, end_date=None, type="GET_LEDGER_DETAIL_VIEW_DATA",reportOptions=None,report_type="csv"
     ):
         try:
             if start_date and end_date is not None:
                 res = reports.create_report(
-                    reportType=type, dataStartTime=start_date, dataEndTime=end_date
+                    reportType=type, dataStartTime=start_date, dataEndTime=end_date,reportOptions = reportOptions
                 ).payload
             else:
                 res = reports.create_report(
@@ -161,18 +163,18 @@ class AmazonSellerStream(Stream):
                 ).payload
             if "reportId" in res:
                 self.report_id = res["reportId"]
-                return self.check_report(res["reportId"], reports)
+                return self.check_report(res["reportId"], reports,report_type)
         except Exception as e:
             raise InvalidResponse(e)
 
     def get_report(self, report_id, reports):
         return reports.get_report(report_id)
 
-    def save_document(self, document_id, reports):
+    def save_document(self, document_id, reports,report_type="csv"):
         res = reports.get_report_document(
             document_id,
             decrypt=True,
-            file=f"{ROOT_DIR}/{document_id}_document.csv",
+            file=f"{ROOT_DIR}/{document_id}_document.{report_type}",
             download=True,
         )
         self.reportDocumentId = document_id
@@ -188,10 +190,20 @@ class AmazonSellerStream(Stream):
                     row["reportId"] = self.report_id
                     row = self.translate_report(row)
                     finalList.append(dict(row))
+            # os.remove(file)
+        return finalList
+    
+    def read_json(self, file):
+        finalList = []
+        file = f"{ROOT_DIR}/{file}"
+        if os.path.isfile(file):
+            with open(file) as data:
+                data_reader = json.load(data)
+                finalList = [data_reader]
             os.remove(file)
         return finalList
 
-    def check_report(self, report_id, reports):
+    def check_report(self, report_id, reports,report_type="csv"):
         res = []
         while True:
             report = self.get_report(report_id, reports).payload
@@ -199,8 +211,11 @@ class AmazonSellerStream(Stream):
             if report["processingStatus"] == "DONE":
                 document_id = report["reportDocumentId"]
                 # save the document
-                self.save_document(document_id, reports)
-                res = self.read_csv(f"./{document_id}_document.csv")
+                self.save_document(document_id, reports,report_type)
+                if report_type =="csv":
+                    res = self.read_csv(f"./{document_id}_document.{report_type}")
+                else:
+                    res  = self.read_json((f"./{document_id}_document.{report_type}"))   
                 break
             elif report["processingStatus"] == "FATAL":
                 self.logger.warning(
