@@ -524,7 +524,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
 
     name = "vendor_sales_report"
     primary_keys = None
-    replication_key = None
+    replication_key = "report_end_date"
     report_id = None
     document_id = None
     schema = th.PropertiesList(
@@ -532,6 +532,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
         th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
         th.Property("salesAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
     ).to_dict()   
 
     @backoff.on_exception(
@@ -545,8 +546,11 @@ class VendorsSalesReportStream(AmazonSellerStream):
         try:
            
             start_date = self.get_starting_timestamp(context) or datetime(2005, 1, 1)
+            if start_date:
+                #Remove timezone info from replication date so we can compare it with other dates.
+                start_date = start_date.replace(tzinfo=None)
             end_date = None
-            if self.config.get("start_date"):
+            if self.config.get("start_date") and not start_date:
                 start_date = datetime.strptime(
                     self.config.get("start_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
@@ -585,6 +589,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
                         report_type="json"
                     )
                     for row in reports:
+                        row.update({"report_end_date":end_date.isoformat()})
                         yield row
 
                 # If reports are form loop through, download documents and populate the data.txt
@@ -592,7 +597,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
                     reports = self.check_report(row["reportId"], report,"json")
                     for report_row in reports:
                         if context is not None:
-                            report_row.update({marketplace_id:context.get('marketplace_id')})
+                            report_row.update({"report_end_date":end_date.isoformat()})
                         yield report_row
                 # Move to the next time period
                 start_date = end_date + timedelta(days=1)
