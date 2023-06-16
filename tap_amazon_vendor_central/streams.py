@@ -545,7 +545,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         try:
            
-            start_date = self.get_starting_timestamp(context) or datetime(2005, 1, 1)
+            start_date = self.get_starting_timestamp(context)
             if start_date:
                 #Remove timezone info from replication date so we can compare it with other dates.
                 start_date = start_date.replace(tzinfo=None)
@@ -575,12 +575,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
             while start_date <= current_date:
                 start_date_f = start_date.strftime("%Y-%m-%dT00:00:00")
                 end_date_f = end_date.strftime("%Y-%m-%dT23:59:59")
-                items = report.get_reports(
-                    reportTypes=report_types,
-                    processingStatuses=processing_status,
-                    dataStartTime=start_date_f,
-                    dataEndTime=end_date_f,
-                ).payload
+                items = self.get_reports_list(report,report_types,processing_status,start_date_f,end_date_f)
                 
                 if not items["reports"]:
                     reports = self.create_report(

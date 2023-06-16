@@ -21,6 +21,7 @@ import os
 import time
 from tap_amazon_vendor_central.utils import InvalidResponse
 import json
+import backoff
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
 
@@ -166,10 +167,21 @@ class AmazonSellerStream(Stream):
                 return self.check_report(res["reportId"], reports,report_type)
         except Exception as e:
             raise InvalidResponse(e)
-
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=5,
+    )
     def get_report(self, report_id, reports):
         return reports.get_report(report_id)
-
+    
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=5,
+    )
     def save_document(self, document_id, reports,report_type="csv"):
         res = reports.get_report_document(
             document_id,
@@ -279,3 +291,19 @@ class AmazonSellerStream(Stream):
         return VendorOrders(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
+    
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=5,
+    )
+    def get_reports_list(
+        self, reports, report_types, processing_status, start_date_f, end_date_f
+    ):
+        return reports.get_reports(
+            reportTypes=report_types,
+            processingStatuses=processing_status,
+            dataStartTime=start_date_f,
+            dataEndTime=end_date_f,
+        ).payload
