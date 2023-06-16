@@ -149,24 +149,35 @@ class AmazonSellerStream(Stream):
         return Inventories(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
-
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=5,
+    )
     def create_report(
-        self, start_date, reports, end_date=None, type="GET_LEDGER_DETAIL_VIEW_DATA",reportOptions=None,report_type="csv"
+        self,reports,start_date=None,  end_date=None, type="GET_LEDGER_DETAIL_VIEW_DATA",reportOptions=None,report_type="csv"
     ):
         try:
             if start_date and end_date is not None:
                 res = reports.create_report(
                     reportType=type, dataStartTime=start_date, dataEndTime=end_date,reportOptions = reportOptions
                 ).payload
+            elif start_date:
+                res = reports.create_report(
+                    reportType=type, dataStartTime=start_date,reportOptions = reportOptions
+                ).payload
             else:
                 res = reports.create_report(
-                    reportType=type, dataStartTime=start_date
+                    reportType=type, reportOptions = reportOptions
                 ).payload
+
             if "reportId" in res:
                 self.report_id = res["reportId"]
                 return self.check_report(res["reportId"], reports,report_type)
         except Exception as e:
             raise InvalidResponse(e)
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -299,7 +310,7 @@ class AmazonSellerStream(Stream):
         factor=5,
     )
     def get_reports_list(
-        self, reports, report_types, processing_status, start_date_f, end_date_f
+        self, reports, report_types, processing_status, start_date_f=None, end_date_f=None
     ):
         return reports.get_reports(
             reportTypes=report_types,
