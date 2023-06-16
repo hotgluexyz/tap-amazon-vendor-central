@@ -12,7 +12,7 @@ from tap_amazon_vendor_central.utils import InvalidResponse, timeout
 from sp_api.base.exceptions import SellingApiServerException
 from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
-
+from abc import abstractproperty
 
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
@@ -519,21 +519,26 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         except Exception as e:
             raise InvalidResponse(e)
 
-class VendorsSalesReportStream(AmazonSellerStream):
+class VendorsReportStream(AmazonSellerStream):
     """Define custom stream."""
-
-    name = "vendor_sales_report"
-    primary_keys = None
-    replication_key = "report_end_date"
-    report_id = None
-    document_id = None
-    schema = th.PropertiesList(
-        th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
-        th.Property("salesAggregate", th.CustomType({"type": ["array", "string"]})),
-        th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
-        th.Property("report_end_date", th.DateTimeType),
-    ).to_dict()   
+    @abstractproperty
+    def name(self):
+        pass
+    @abstractproperty
+    def primary_keys(self):
+        pass
+    @abstractproperty
+    def primary_keys(self):
+        pass
+    @abstractproperty
+    def schema(self):
+        pass
+    @abstractproperty
+    def report_name(self):
+        pass
+    @abstractproperty
+    def report_options(self):
+        pass
 
     @backoff.on_exception(
         backoff.expo,
@@ -562,7 +567,7 @@ class VendorsSalesReportStream(AmazonSellerStream):
         
             end_date = start_date + timedelta(days=14)
             
-            report_types = ["GET_VENDOR_SALES_REPORT"]
+            report_types = [self.report_name]
             processing_status = self.config.get("processing_status")
             #Get list of valid marketplaces
             
@@ -579,8 +584,8 @@ class VendorsSalesReportStream(AmazonSellerStream):
                 
                 if not items["reports"]:
                     reports = self.create_report(
-                        start_date_f, report, end_date_f, "GET_VENDOR_SALES_REPORT",
-                        reportOptions={"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"},
+                        report, start_date_f,  end_date_f, self.report_name,
+                        reportOptions=self.report_options,
                         report_type="json"
                     )
                     for row in reports:
@@ -597,7 +602,116 @@ class VendorsSalesReportStream(AmazonSellerStream):
                 # Move to the next time period
                 start_date = end_date + timedelta(days=1)
                 end_date += timedelta(days=14)
-                do_something = ""
 
         except Exception as e:
             raise InvalidResponse(e)         
+class VendorsSalesReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_sales_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_SALES_REPORT"
+    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("salesAggregate", th.CustomType({"type": ["array", "string"]})),
+        th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
+
+class VendorsTrafficReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_traffic_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_TRAFFIC_REPORT"
+    report_options = {"reportPeriod": "DAY"}
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("trafficAggregate", th.CustomType({"type": ["array", "string"]})),
+        th.Property("trafficByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
+
+class VendorsInventoryReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_inventory_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_INVENTORY_REPORT"
+    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("inventoryAggregate", th.CustomType({"type": ["array", "string"]})),
+        th.Property("inventoryByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
+
+class VendorsForecastingReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_forecasting_report"
+    primary_keys = None
+    replication_key = None
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_FORECASTING_REPORT"
+    report_options = {"sellingProgram": "RETAIL"}
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("forecastByAsin", th.CustomType({"type": ["array", "string"]})),
+    ).to_dict()
+    
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=3,
+    )
+    # @timeout(15)
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        try:
+           
+            report_types = [self.report_name]
+            processing_status = self.config.get("processing_status")
+            #Get list of valid marketplaces
+            
+            marketplace_id = None
+            if context is not None:
+                marketplace_id = context.get("marketplace_id")
+           
+           
+            report = self.get_sp_reports(marketplace_id=marketplace_id)
+            items = self.get_reports_list(report,report_types,processing_status)
+            
+            if not items["reports"]:
+                reports = self.create_report(
+                    reports=report,
+                    type=self.report_name,
+                    reportOptions=self.report_options,
+                    report_type="json"
+                )
+                for row in reports:
+                    yield row
+
+            # If reports are form loop through, download documents and populate the data.txt
+            for row in items["reports"]:
+                reports = self.check_report(row["reportId"], report,"json")
+                for report_row in reports:
+                    yield report_row
+
+        except Exception as e:
+            raise InvalidResponse(e)
