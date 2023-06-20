@@ -438,8 +438,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
 
     name = "vendor_purchase_orders"
     primary_keys = ["purchaseOrderNumber"]
-    # TODO loook for relevant replication key in the live data
-    replication_key = None
+    replication_key = "purchaseOrderStateChangedDate"
     parent_stream_type = MarketplacesStream
     marketplace_id = "{marketplace_id}"
 
@@ -450,6 +449,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         th.Property("orderDetails", th.CustomType({"type": ["object", "string"]})),
         th.Property("deliveryWindow", th.StringType),
         th.Property("items", th.CustomType({"type": ["array", "string"]})),
+        th.Property("purchaseOrderStateChangedDate", th.DateTimeType),
     ).to_dict()
 
     @backoff.on_exception(
@@ -515,6 +515,9 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
                 )
             for row in rows:
                 for item in row:
+                    order_details = item.get("orderDetails",{})
+                    if order_details.get("purchaseOrderStateChangedDate"):
+                        item.update({"purchaseOrderStateChangedDate":order_details.get("purchaseOrderStateChangedDate")})
                     yield item
         except Exception as e:
             raise InvalidResponse(e)
@@ -539,6 +542,14 @@ class VendorsReportStream(AmazonSellerStream):
     @abstractproperty
     def report_options(self):
         pass
+    def correct_end_date(self,end_date,start_date,current_date):
+        if end_date>current_date:
+            #If end_date is greater than today then fetch report for yesterday.
+            end_date = current_date - timedelta(days=1)
+
+        if end_date <= start_date:
+            end_date = start_date    
+        return end_date    
 
     @backoff.on_exception(
         backoff.expo,
@@ -566,6 +577,7 @@ class VendorsReportStream(AmazonSellerStream):
                 start_date = current_date - timedelta(days=1460)
         
             end_date = start_date + timedelta(days=14)
+            end_date = self.correct_end_date(end_date,start_date,current_date)
             
             report_types = [self.report_name]
             processing_status = self.config.get("processing_status")
@@ -596,12 +608,13 @@ class VendorsReportStream(AmazonSellerStream):
                 for row in items["reports"]:
                     reports = self.check_report(row["reportId"], report,"json")
                     for report_row in reports:
-                        if context is not None:
-                            report_row.update({"report_end_date":end_date.isoformat()})
+                        # if context is not None:
+                        report_row.update({"report_end_date":end_date.isoformat()})
                         yield report_row
                 # Move to the next time period
                 start_date = end_date + timedelta(days=1)
                 end_date += timedelta(days=14)
+                end_date = self.correct_end_date(end_date,start_date,current_date)
 
         except Exception as e:
             raise InvalidResponse(e)         
