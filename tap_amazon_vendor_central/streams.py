@@ -545,7 +545,7 @@ class VendorsReportStream(AmazonSellerStream):
     def correct_end_date(self,end_date,start_date,current_date):
         if end_date>current_date:
             #If end_date is greater than today then fetch report for yesterday.
-            end_date = current_date - timedelta(days=1)
+            end_date = current_date - timedelta(days=2)
 
         if end_date <= start_date:
             end_date = start_date    
