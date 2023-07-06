@@ -13,7 +13,7 @@ from sp_api.base.exceptions import SellingApiServerException
 from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 from abc import abstractproperty
-
+import pytz
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
 
@@ -524,6 +524,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
 
 class VendorsReportStream(AmazonSellerStream):
     """Define custom stream."""
+    lookback_days = 1460
     @abstractproperty
     def name(self):
         pass
@@ -550,7 +551,12 @@ class VendorsReportStream(AmazonSellerStream):
         if end_date <= start_date:
             end_date = start_date    
         return end_date    
-
+    
+    def format_end_date(self,end_date):
+        return end_date.strftime("%Y-%m-%dT23:59:59")
+    def get_current_datetime(self):
+        return datetime.now()
+    
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -570,11 +576,11 @@ class VendorsReportStream(AmazonSellerStream):
                 start_date = datetime.strptime(
                     self.config.get("start_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
-            current_date = datetime.now()
-            minimum_start_date = current_date - timedelta(days=1460)
+            current_date = self.get_current_datetime()
+            minimum_start_date = current_date - timedelta(days=self.lookback_days)
             if start_date < minimum_start_date:
                 #Reset start date to days limit if it is greater than 1460 days
-                start_date = current_date - timedelta(days=1460)
+                start_date = current_date - timedelta(days=self.lookback_days)
         
             end_date = start_date + timedelta(days=14)
             end_date = self.correct_end_date(end_date,start_date,current_date)
@@ -591,7 +597,7 @@ class VendorsReportStream(AmazonSellerStream):
             report = self.get_sp_reports(marketplace_id=marketplace_id)
             while start_date <= current_date:
                 start_date_f = start_date.strftime("%Y-%m-%dT00:00:00")
-                end_date_f = end_date.strftime("%Y-%m-%dT23:59:59")
+                end_date_f = self.format_end_date(end_date)
                 items = self.get_reports_list(report,report_types,processing_status,start_date_f,end_date_f)
                 
                 if not items["reports"]:
@@ -728,3 +734,51 @@ class VendorsForecastingReportStream(VendorsReportStream):
 
         except Exception as e:
             raise InvalidResponse(e)
+
+class VendorsSalesRealtimeReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_sales_realtime_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_REAL_TIME_SALES_REPORT"
+    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    lookback_days = 14
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()  
+    def get_current_datetime(self):
+        current_time = datetime.utcnow()
+        target_timezone = pytz.timezone('America/New_York')
+        converted_time = current_time.astimezone(target_timezone)
+        return converted_time.now()
+    
+    def format_end_date(self,end_date):
+        today = datetime.today().date()
+        end_date_f = end_date.date()
+        if end_date_f == today:
+            end_date = end_date - timedelta(days=1)
+        return end_date.strftime("%Y-%m-%dT23:59:59")  
+    
+class VendorsInventoryRealtimeReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_inventory_realtime_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_REAL_TIME_INVENTORY_REPORT"
+    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    lookback_days = 7
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
