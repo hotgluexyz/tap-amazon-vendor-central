@@ -642,6 +642,15 @@ class VendorsSalesReportStream(VendorsReportStream):
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
 
+    def correct_end_date(self,end_date,start_date,current_date):
+        if end_date>current_date:
+            #If end_date is greater than today then fetch report for earlier day.
+            end_date = current_date - timedelta(days=3)
+
+        if end_date <= start_date:
+            end_date = start_date    
+        return end_date
+
 class VendorsTrafficReportStream(VendorsReportStream):
     """Define custom stream."""
 
