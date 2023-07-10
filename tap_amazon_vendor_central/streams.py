@@ -556,6 +556,8 @@ class VendorsReportStream(AmazonSellerStream):
         return end_date.strftime("%Y-%m-%dT23:59:59")
     def get_current_datetime(self):
         return datetime.now()
+    def get_start_date_formatted(self,start_date):
+        return start_date.strftime("%Y-%m-%dT00:00:00")
     
     @backoff.on_exception(
         backoff.expo,
@@ -596,7 +598,7 @@ class VendorsReportStream(AmazonSellerStream):
            
             report = self.get_sp_reports(marketplace_id=marketplace_id)
             while start_date <= current_date:
-                start_date_f = start_date.strftime("%Y-%m-%dT00:00:00")
+                start_date_f = self.get_start_date_formatted(start_date)
                 end_date_f = self.format_end_date(end_date)
                 items = self.get_reports_list(report,report_types,processing_status,start_date_f,end_date_f)
                 
@@ -754,13 +756,14 @@ class VendorsSalesRealtimeReportStream(VendorsReportStream):
     document_id = None
     report_name = "GET_VENDOR_REAL_TIME_SALES_REPORT"
     report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
-    lookback_days = 14
+    lookback_days = 13
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
         th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()  
+
     def get_current_datetime(self):
         current_time = datetime.utcnow()
         target_timezone = pytz.timezone('America/New_York')
@@ -771,8 +774,18 @@ class VendorsSalesRealtimeReportStream(VendorsReportStream):
         today = datetime.today().date()
         end_date_f = end_date.date()
         if end_date_f == today:
-            end_date = end_date - timedelta(days=1)
+            #Get everything until start of today. 
+            return end_date.strftime("%Y-%m-%dT00:06:59")  
         return end_date.strftime("%Y-%m-%dT23:59:59")  
+    
+    def get_start_date_formatted(self,start_date):
+        today = datetime.today().date()
+        start_date_f = start_date.date()
+        if start_date_f == today:
+            start_date = start_date - timedelta(days=1)
+            #Get everything until start of today. 
+            return start_date.strftime("%Y-%m-%dT23:00:00") 
+        return start_date.strftime("%Y-%m-%dT00:00:00")
     
 class VendorsInventoryRealtimeReportStream(VendorsReportStream):
     """Define custom stream."""
@@ -791,3 +804,38 @@ class VendorsInventoryRealtimeReportStream(VendorsReportStream):
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
+
+class VendorsTrafficRealtimeReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_traffic_realtime_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_VENDOR_REAL_TIME_TRAFFIC_REPORT"
+    report_options = {"reportPeriod": "DAY"}
+    lookback_days = 13
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
+    
+    def format_end_date(self,end_date):
+        today = datetime.today().date()
+        end_date_f = end_date.date()
+        if end_date_f == today:
+            #Get everything until start of today. 
+            return end_date.strftime("%Y-%m-%dT00:06:59")  
+        return end_date.strftime("%Y-%m-%dT23:59:59")  
+    
+    def get_start_date_formatted(self,start_date):
+        today = datetime.today().date()
+        start_date_f = start_date.date()
+        if start_date_f == today:
+            start_date = start_date - timedelta(days=1)
+            #Get everything until start of today. 
+            return start_date.strftime("%Y-%m-%dT23:00:00") 
+        return start_date.strftime("%Y-%m-%dT00:00:00")
