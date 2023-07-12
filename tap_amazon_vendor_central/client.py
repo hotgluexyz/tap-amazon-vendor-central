@@ -149,6 +149,7 @@ class AmazonSellerStream(Stream):
         return Inventories(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -156,25 +157,36 @@ class AmazonSellerStream(Stream):
         factor=5,
     )
     def create_report(
-        self,reports,start_date=None,  end_date=None, type="GET_LEDGER_DETAIL_VIEW_DATA",reportOptions=None,report_type="csv"
+        self,
+        reports,
+        start_date=None,
+        end_date=None,
+        type="GET_LEDGER_DETAIL_VIEW_DATA",
+        reportOptions=None,
+        report_type="csv",
     ):
         try:
             if start_date and end_date is not None:
                 res = reports.create_report(
-                    reportType=type, dataStartTime=start_date, dataEndTime=end_date,reportOptions = reportOptions
+                    reportType=type,
+                    dataStartTime=start_date,
+                    dataEndTime=end_date,
+                    reportOptions=reportOptions,
                 ).payload
             elif start_date:
                 res = reports.create_report(
-                    reportType=type, dataStartTime=start_date,reportOptions = reportOptions
+                    reportType=type,
+                    dataStartTime=start_date,
+                    reportOptions=reportOptions,
                 ).payload
             else:
                 res = reports.create_report(
-                    reportType=type, reportOptions = reportOptions
+                    reportType=type, reportOptions=reportOptions
                 ).payload
 
             if "reportId" in res:
                 self.report_id = res["reportId"]
-                return self.check_report(res["reportId"], reports,report_type)
+                return self.check_report(res["reportId"], reports, report_type)
         except Exception as e:
             raise InvalidResponse(e)
 
@@ -186,14 +198,14 @@ class AmazonSellerStream(Stream):
     )
     def get_report(self, report_id, reports):
         return reports.get_report(report_id)
-    
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
         max_tries=10,
         factor=5,
     )
-    def save_document(self, document_id, reports,report_type="csv"):
+    def save_document(self, document_id, reports, report_type="csv"):
         res = reports.get_report_document(
             document_id,
             decrypt=True,
@@ -215,7 +227,7 @@ class AmazonSellerStream(Stream):
                     finalList.append(dict(row))
             # os.remove(file)
         return finalList
-    
+
     def read_json(self, file):
         finalList = []
         file = f"{ROOT_DIR}/{file}"
@@ -226,7 +238,7 @@ class AmazonSellerStream(Stream):
             os.remove(file)
         return finalList
 
-    def check_report(self, report_id, reports,report_type="csv"):
+    def check_report(self, report_id, reports, report_type="csv"):
         res = []
         while True:
             report = self.get_report(report_id, reports).payload
@@ -234,11 +246,11 @@ class AmazonSellerStream(Stream):
             if report["processingStatus"] == "DONE":
                 document_id = report["reportDocumentId"]
                 # save the document
-                self.save_document(document_id, reports,report_type)
-                if report_type =="csv":
+                self.save_document(document_id, reports, report_type)
+                if report_type == "csv":
                     res = self.read_csv(f"./{document_id}_document.{report_type}")
                 else:
-                    res  = self.read_json((f"./{document_id}_document.{report_type}"))   
+                    res = self.read_json((f"./{document_id}_document.{report_type}"))
                 break
             elif report["processingStatus"] == "FATAL":
                 self.logger.warning(
@@ -302,7 +314,7 @@ class AmazonSellerStream(Stream):
         return VendorOrders(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
-    
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -310,7 +322,12 @@ class AmazonSellerStream(Stream):
         factor=5,
     )
     def get_reports_list(
-        self, reports, report_types, processing_status, start_date_f=None, end_date_f=None
+        self,
+        reports,
+        report_types,
+        processing_status,
+        start_date_f=None,
+        end_date_f=None,
     ):
         return reports.get_reports(
             reportTypes=report_types,
