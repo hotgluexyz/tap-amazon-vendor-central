@@ -1,7 +1,7 @@
 """Stream type classes for tap-amazon-seller."""
 from datetime import datetime, timedelta
 
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Dict, Any
 
 import backoff
 from singer_sdk import typing as th
@@ -14,6 +14,9 @@ from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 from abc import abstractproperty
 import pytz
+import json
+
+
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
 
@@ -67,178 +70,6 @@ class MarketplacesStream(AmazonSellerStream):
 
         for mp in marketplaces:
             yield {"id": mp}
-
-
-class ProductsIventoryStream(AmazonSellerStream):
-    """Define custom stream."""
-
-    name = "products_inventory"
-    primary_keys = ["listing-id"]
-    replication_key = None
-    report_id = None
-    document_id = None
-    parent_stream_type = MarketplacesStream
-    schema = th.PropertiesList(
-        th.Property("marketplaceIds", th.CustomType({"type": ["array", "string"]})),
-        th.Property("item-name", th.StringType),
-        th.Property("marketplace_id", th.StringType),
-        th.Property("item-description", th.StringType),
-        th.Property("listing-id", th.StringType),
-        th.Property("seller-sku", th.StringType),
-        th.Property("price", th.StringType),
-        th.Property("quantity", th.StringType),
-        th.Property("open-date", th.StringType),
-        th.Property("image-url", th.StringType),
-        th.Property("item-is-marketplace", th.StringType),
-        th.Property("product-id-type", th.StringType),
-        th.Property("zshop-shipping-fee", th.StringType),
-        th.Property("item-note", th.StringType),
-        th.Property("item-condition", th.StringType),
-        th.Property("zshop-category1", th.StringType),
-        th.Property("zshop-browse-path", th.StringType),
-        th.Property("asin1", th.StringType),
-        th.Property("asin2", th.StringType),
-        th.Property("asin3", th.StringType),
-        th.Property("will-ship-internationally", th.StringType),
-        th.Property("zshop-boldface", th.StringType),
-        th.Property("product-id", th.StringType),
-        th.Property("bid-for-featured-placement", th.StringType),
-        th.Property("add-delete", th.StringType),
-        th.Property("pending-quantity", th.StringType),
-        th.Property("fulfilment-channel", th.StringType),
-        th.Property("merchant-shipping-group", th.StringType),
-        th.Property("status", th.StringType),
-        th.Property("Minimum order quantity", th.StringType),
-        th.Property("Sell remainder", th.StringType),
-        th.Property("product-id", th.StringType),
-        th.Property("marketplace_id", th.StringType),
-    ).to_dict()
-
-    def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
-        """Return a context dictionary for child streams."""
-        if "asin1" in record:
-            return {
-                "ASIN": record["asin1"],
-                "marketplace_id": context.get("marketplace_id"),
-            }
-        elif "product-id" in record:
-            return {
-                "ASIN": record["product-id"],
-                "marketplace_id": context.get("marketplace_id"),
-            }
-        else:
-            return []
-
-    @backoff.on_exception(
-        backoff.expo,
-        (Exception),
-        max_tries=10,
-        factor=3,
-    )
-    @timeout(15)
-    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
-        try:
-            start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
-            end_date = None
-            if self.config.get("start_date"):
-                start_date = datetime.strptime(
-                    self.config.get("start_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
-            if self.config.get("end_date"):
-                end_date = datetime.strptime(
-                    self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
-            start_date = start_date.strftime("%Y-%m-%dT00:00:00")
-            report_types = ["GET_MERCHANT_LISTINGS_ALL_DATA"]
-            processing_status = self.config.get("processing_status")
-            marketplace_id = None
-            if context is not None:
-                marketplace_id = context.get("marketplace_id")
-
-            report = self.get_sp_reports(marketplace_id=marketplace_id)
-            if start_date and end_date is not None:
-                end_date = end_date.strftime("%Y-%m-%dT23:59:59")
-                items = report.get_reports(
-                    reportTypes=report_types,
-                    processingStatuses=processing_status,
-                    dataStartTime=start_date,
-                    dataEndTime=end_date,
-                ).payload
-            else:
-                items = report.get_reports(
-                    reportTypes=report_types,
-                    processingStatuses=processing_status,
-                    dataStartTime=start_date,
-                ).payload
-
-            if not items["reports"]:
-                reports = self.create_report(
-                    start_date, report, end_date, "GET_MERCHANT_LISTINGS_ALL_DATA"
-                )
-                for row in reports:
-                    yield row
-
-            # If reports are form loop through, download documents and populate the data.txt
-            for row in items["reports"]:
-                reports = self.check_report(row["reportId"], report)
-                for report_row in reports:
-                    if context is not None:
-                        report_row.update(
-                            {marketplace_id: context.get("marketplace_id")}
-                        )
-                    yield report_row
-
-        except Exception as e:
-            raise InvalidResponse(e)
-
-
-class ProductDetails(AmazonSellerStream):
-    """Define custom stream."""
-
-    name = "product_details"
-    primary_keys = ["ASIN"]
-    replication_key = None
-    asin = "{ASIN}"
-    parent_stream_type = ProductsIventoryStream
-    # Optionally, you may also use `schema_filepath` in place of `schema`:
-    # schema_filepath = SCHEMAS_DIR / "users.json"
-    schema = th.PropertiesList(
-        th.Property("ASIN", th.StringType),
-        th.Property("Identifiers", th.CustomType({"type": ["object", "string"]})),
-        th.Property("AttributeSets", th.CustomType({"type": ["array", "string"]})),
-        th.Property("Relationships", th.CustomType({"type": ["array", "string"]})),
-        th.Property("SalesRankings", th.CustomType({"type": ["array", "string"]})),
-        th.Property("marketplace_id", th.StringType),
-    ).to_dict()
-
-    @backoff.on_exception(
-        backoff.expo,
-        (Exception),
-        max_tries=10,
-        factor=3,
-    )
-    @timeout(15)
-    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
-        try:
-            # if context is not None:
-            asin = context.get("ASIN")
-            catalog = self.get_sp_catalog(context.get("marketplace_id"))
-            if context.get("marketplace_id") == "JP":
-                items = catalog.list_items(JAN=asin).payload
-            elif context.get("marketplace_id") in ["FR"]:
-                items = catalog.list_items(EAN=asin).payload
-            else:
-                items = catalog.get_item(asin=asin).payload
-            if "Items" in items:
-                if len(items["Items"]) > 0:
-                    items = items["Items"][0]
-            items.update({"ASIN": asin})
-            items.update({"marketplace_id": context.get("marketplace_id")})
-            return [items]
-            # else:
-            #     return []
-        except Exception as e:
-            raise InvalidResponse(e)
 
 
 class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
@@ -515,50 +346,68 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
                 )
             for row in rows:
                 for item in row:
-                    order_details = item.get("orderDetails",{})
+                    order_details = item.get("orderDetails", {})
                     if order_details.get("purchaseOrderStateChangedDate"):
-                        item.update({"purchaseOrderStateChangedDate":order_details.get("purchaseOrderStateChangedDate")})
+                        item.update(
+                            {
+                                "purchaseOrderStateChangedDate": order_details.get(
+                                    "purchaseOrderStateChangedDate"
+                                )
+                            }
+                        )
                     yield item
         except Exception as e:
             raise InvalidResponse(e)
 
+
 class VendorsReportStream(AmazonSellerStream):
     """Define custom stream."""
+
     lookback_days = 1460
+    correct_end_date_minus_days = 2
+
     @abstractproperty
     def name(self):
         pass
+
     @abstractproperty
     def primary_keys(self):
         pass
+
     @abstractproperty
     def primary_keys(self):
         pass
+
     @abstractproperty
     def schema(self):
         pass
+
     @abstractproperty
     def report_name(self):
         pass
+
     @abstractproperty
     def report_options(self):
         pass
-    def correct_end_date(self,end_date,start_date,current_date):
-        if end_date>current_date:
-            #If end_date is greater than today then fetch report for yesterday.
-            end_date = current_date - timedelta(days=2)
+
+    def correct_end_date(self, end_date, start_date, current_date):
+        if end_date > current_date:
+            # If end_date is greater than today then fetch report for yesterday.
+            end_date = current_date - timedelta(days=self.correct_end_date_minus_days)
 
         if end_date <= start_date:
-            end_date = start_date    
-        return end_date    
-    
-    def format_end_date(self,end_date):
+            end_date = start_date
+        return end_date
+
+    def format_end_date(self, end_date):
         return end_date.strftime("%Y-%m-%dT23:59:59")
+
     def get_current_datetime(self):
         return datetime.now()
-    def get_start_date_formatted(self,start_date):
+
+    def get_start_date_formatted(self, start_date):
         return start_date.strftime("%Y-%m-%dT00:00:00")
-    
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -568,10 +417,10 @@ class VendorsReportStream(AmazonSellerStream):
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         try:
-           
+
             start_date = self.get_starting_timestamp(context)
             if start_date:
-                #Remove timezone info from replication date so we can compare it with other dates.
+                # Remove timezone info from replication date so we can compare it with other dates.
                 start_date = start_date.replace(tzinfo=None)
             end_date = None
             if self.config.get("start_date") and not start_date:
@@ -581,51 +430,57 @@ class VendorsReportStream(AmazonSellerStream):
             current_date = self.get_current_datetime()
             minimum_start_date = current_date - timedelta(days=self.lookback_days)
             if start_date < minimum_start_date:
-                #Reset start date to days limit if it is greater than 1460 days
+                # Reset start date to days limit if it is greater than 1460 days
                 start_date = current_date - timedelta(days=self.lookback_days)
-        
+
             end_date = start_date + timedelta(days=14)
-            end_date = self.correct_end_date(end_date,start_date,current_date)
-            
+            end_date = self.correct_end_date(end_date, start_date, current_date)
+
             report_types = [self.report_name]
             processing_status = self.config.get("processing_status")
-            #Get list of valid marketplaces
-            
+            # Get list of valid marketplaces
+
             marketplace_id = None
             if context is not None:
                 marketplace_id = context.get("marketplace_id")
-           
-           
+
             report = self.get_sp_reports(marketplace_id=marketplace_id)
             while start_date <= current_date:
                 start_date_f = self.get_start_date_formatted(start_date)
                 end_date_f = self.format_end_date(end_date)
-                items = self.get_reports_list(report,report_types,processing_status,start_date_f,end_date_f)
-                
+                items = self.get_reports_list(
+                    report, report_types, processing_status, start_date_f, end_date_f
+                )
+
                 if not items["reports"]:
                     reports = self.create_report(
-                        report, start_date_f,  end_date_f, self.report_name,
+                        report,
+                        start_date_f,
+                        end_date_f,
+                        self.report_name,
                         reportOptions=self.report_options,
-                        report_type="json"
+                        report_type="json",
                     )
                     for row in reports:
-                        row.update({"report_end_date":end_date.isoformat()})
+                        row.update({"report_end_date": end_date.isoformat()})
                         yield row
 
                 # If reports are form loop through, download documents and populate the data.txt
                 for row in items["reports"]:
-                    reports = self.check_report(row["reportId"], report,"json")
+                    reports = self.check_report(row["reportId"], report, "json")
                     for report_row in reports:
                         # if context is not None:
-                        report_row.update({"report_end_date":end_date.isoformat()})
+                        report_row.update({"report_end_date": end_date.isoformat()})
                         yield report_row
                 # Move to the next time period
                 start_date = end_date + timedelta(days=1)
                 end_date += timedelta(days=14)
-                end_date = self.correct_end_date(end_date,start_date,current_date)
+                end_date = self.correct_end_date(end_date, start_date, current_date)
 
         except Exception as e:
-            raise InvalidResponse(e)         
+            raise InvalidResponse(e)
+
+
 class VendorsSalesReportStream(VendorsReportStream):
     """Define custom stream."""
 
@@ -635,23 +490,22 @@ class VendorsSalesReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_SALES_REPORT"
-    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    report_options = {
+        "reportPeriod": "DAY",
+        "sellingProgram": "RETAIL",
+        "distributorView": "MANUFACTURING",
+    }
+    correct_end_date_minus_days = 3
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("salesAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
 
-    def correct_end_date(self,end_date,start_date,current_date):
-        if end_date>current_date:
-            #If end_date is greater than today then fetch report for earlier day.
-            end_date = current_date - timedelta(days=3)
-
-        if end_date <= start_date:
-            end_date = start_date    
-        return end_date
 
 class VendorsTrafficReportStream(VendorsReportStream):
     """Define custom stream."""
@@ -665,11 +519,14 @@ class VendorsTrafficReportStream(VendorsReportStream):
     report_options = {"reportPeriod": "DAY"}
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("trafficAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("trafficByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
+
 
 class VendorsInventoryReportStream(VendorsReportStream):
     """Define custom stream."""
@@ -680,14 +537,43 @@ class VendorsInventoryReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_INVENTORY_REPORT"
-    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    report_options = {
+        "reportPeriod": "DAY",
+        "sellingProgram": "RETAIL",
+        "distributorView": "MANUFACTURING",
+    }
+    correct_end_date_minus_days = 3
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("inventoryAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("inventoryByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
+    # def get_marketplace_code(self,marketplace_id):
+    #     for marketplace in Marketplaces:
+    #         if marketplace_id == marketplace.marketplace_id:
+    #             return marketplace.name
+    # def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
+    #     """Return a context dictionary for child streams."""
+    #     marketplace_id = None
+    #     if record.get("reportSpecification"):
+    #         if record['reportSpecification'].get("marketplaceIds"):
+    #             if len(record['reportSpecification']['marketplaceIds'])>0:
+    #                 marketplace_id = record['reportSpecification']['marketplaceIds'][0]
+    #                 marketplace_id = self.get_marketplace_code(marketplace_id)
+    #     return {"products":record['inventoryByAsin'],"marketplace_id":marketplace_id}
+    # def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
+
+    #     with open("./vendor_inventory_report_sample.json") as file:
+    #         data = json.load(file)
+
+    #     data = [data]
+    #     for row in data:
+    #         yield row
+
 
 class VendorsForecastingReportStream(VendorsReportStream):
     """Define custom stream."""
@@ -701,10 +587,12 @@ class VendorsForecastingReportStream(VendorsReportStream):
     report_options = {"sellingProgram": "RETAIL"}
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("forecastByAsin", th.CustomType({"type": ["array", "string"]})),
     ).to_dict()
-    
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -714,37 +602,37 @@ class VendorsForecastingReportStream(VendorsReportStream):
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         try:
-           
+
             report_types = [self.report_name]
             processing_status = self.config.get("processing_status")
-            #Get list of valid marketplaces
-            
+            # Get list of valid marketplaces
+
             marketplace_id = None
             if context is not None:
                 marketplace_id = context.get("marketplace_id")
-           
-           
+
             report = self.get_sp_reports(marketplace_id=marketplace_id)
-            items = self.get_reports_list(report,report_types,processing_status)
-            
+            items = self.get_reports_list(report, report_types, processing_status)
+
             if not items["reports"]:
                 reports = self.create_report(
                     reports=report,
                     type=self.report_name,
                     reportOptions=self.report_options,
-                    report_type="json"
+                    report_type="json",
                 )
                 for row in reports:
                     yield row
 
             # If reports are form loop through, download documents and populate the data.txt
             for row in items["reports"]:
-                reports = self.check_report(row["reportId"], report,"json")
+                reports = self.check_report(row["reportId"], report, "json")
                 for report_row in reports:
                     yield report_row
 
         except Exception as e:
             raise InvalidResponse(e)
+
 
 class VendorsSalesRealtimeReportStream(VendorsReportStream):
     """Define custom stream."""
@@ -755,38 +643,45 @@ class VendorsSalesRealtimeReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_REAL_TIME_SALES_REPORT"
-    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
+    report_options = {
+        "reportPeriod": "DAY",
+        "sellingProgram": "RETAIL",
+        "distributorView": "MANUFACTURING",
+    }
     lookback_days = 13
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
-    ).to_dict()  
+    ).to_dict()
 
     def get_current_datetime(self):
         current_time = datetime.utcnow()
-        target_timezone = pytz.timezone('America/New_York')
+        target_timezone = pytz.timezone("America/New_York")
         converted_time = current_time.astimezone(target_timezone)
         return converted_time.now()
-    
-    def format_end_date(self,end_date):
+
+    def format_end_date(self, end_date):
         today = datetime.today().date()
         end_date_f = end_date.date()
         if end_date_f == today:
-            #Get everything until start of today. 
-            return end_date.strftime("%Y-%m-%dT00:06:59")  
-        return end_date.strftime("%Y-%m-%dT23:59:59")  
-    
-    def get_start_date_formatted(self,start_date):
+            # Get everything until start of today.
+            return end_date.strftime("%Y-%m-%dT00:06:59")
+        return end_date.strftime("%Y-%m-%dT23:59:59")
+
+    def get_start_date_formatted(self, start_date):
         today = datetime.today().date()
         start_date_f = start_date.date()
         if start_date_f == today:
             start_date = start_date - timedelta(days=1)
-            #Get everything until start of today. 
-            return start_date.strftime("%Y-%m-%dT23:00:00") 
+            # Get everything until start of today.
+            return start_date.strftime("%Y-%m-%dT23:00:00")
         return start_date.strftime("%Y-%m-%dT00:00:00")
-    
+
+
 class VendorsInventoryRealtimeReportStream(VendorsReportStream):
     """Define custom stream."""
 
@@ -796,14 +691,38 @@ class VendorsInventoryRealtimeReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_REAL_TIME_INVENTORY_REPORT"
-    report_options = {"reportPeriod": "DAY","sellingProgram": "RETAIL","distributorView": "MANUFACTURING"}
-    lookback_days = 7
+    report_options = {
+        "reportPeriod": "DAY",
+        "sellingProgram": "RETAIL",
+        "distributorView": "MANUFACTURING",
+    }
+    lookback_days = 6
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
+
+    def format_end_date(self, end_date):
+        today = datetime.today().date()
+        end_date_f = end_date.date()
+        if end_date_f == today:
+            # Get everything until start of today.
+            return end_date.strftime("%Y-%m-%dT00:06:59")
+        return end_date.strftime("%Y-%m-%dT23:59:59")
+
+    def get_start_date_formatted(self, start_date):
+        today = datetime.today().date()
+        start_date_f = start_date.date()
+        if start_date_f == today:
+            start_date = start_date - timedelta(days=1)
+            # Get everything until start of today.
+            return start_date.strftime("%Y-%m-%dT23:00:00")
+        return start_date.strftime("%Y-%m-%dT00:00:00")
+
 
 class VendorsTrafficRealtimeReportStream(VendorsReportStream):
     """Define custom stream."""
@@ -818,24 +737,112 @@ class VendorsTrafficRealtimeReportStream(VendorsReportStream):
     lookback_days = 13
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
-        th.Property("reportSpecification", th.CustomType({"type": ["object", "string"]})),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
-    
-    def format_end_date(self,end_date):
+    # Need to add one more class to inherit from to make code DRY.
+    def format_end_date(self, end_date):
         today = datetime.today().date()
         end_date_f = end_date.date()
         if end_date_f == today:
-            #Get everything until start of today. 
-            return end_date.strftime("%Y-%m-%dT00:06:59")  
-        return end_date.strftime("%Y-%m-%dT23:59:59")  
-    
-    def get_start_date_formatted(self,start_date):
+            # Get everything until start of today.
+            return end_date.strftime("%Y-%m-%dT00:06:59")
+        return end_date.strftime("%Y-%m-%dT23:59:59")
+
+    def get_start_date_formatted(self, start_date):
         today = datetime.today().date()
         start_date_f = start_date.date()
         if start_date_f == today:
             start_date = start_date - timedelta(days=1)
-            #Get everything until start of today. 
-            return start_date.strftime("%Y-%m-%dT23:00:00") 
+            # Get everything until start of today.
+            return start_date.strftime("%Y-%m-%dT23:00:00")
         return start_date.strftime("%Y-%m-%dT00:00:00")
+
+
+class InventoryProductsListStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "inventory_product_list"
+    primary_keys = None
+    report_id = None
+    document_id = None
+    previous_items = []
+    parent_stream_type = VendorsInventoryReportStream
+    report_name = "GET_VENDOR_INVENTORY_REPORT"
+    report_options = {
+        "reportPeriod": "DAY",
+        "sellingProgram": "RETAIL",
+        "distributorView": "MANUFACTURING",
+    }
+    correct_end_date_minus_days = 3
+    schema = th.PropertiesList(
+        th.Property("asin", th.StringType),
+    ).to_dict()
+
+    def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
+        """Return a context dictionary for child streams."""
+        return {"ASIN": record["asin"], "marketplace_id": context.get("marketplace_id")}
+
+    def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
+        records = None
+        if context.get("products"):
+            records = context["products"]
+        for record in records:
+            transformed_record = self.post_process(record, context)
+            if transformed_record["asin"] in self.previous_items:
+                return None
+            if transformed_record is None:
+                # Record filtered out during post_process()
+                continue
+            self.previous_items.append(transformed_record["asin"])
+            yield transformed_record.copy()
+
+
+class ProductDetails(AmazonSellerStream):
+    """Define custom stream."""
+
+    name = "product_details"
+    primary_keys = ["ASIN"]
+    replication_key = None
+    asin = "{ASIN}"
+    parent_stream_type = InventoryProductsListStream
+    schema = th.PropertiesList(
+        th.Property("ASIN", th.StringType),
+        th.Property("Identifiers", th.CustomType({"type": ["object", "string"]})),
+        th.Property("AttributeSets", th.CustomType({"type": ["array", "string"]})),
+        th.Property("Relationships", th.CustomType({"type": ["array", "string"]})),
+        th.Property("SalesRankings", th.CustomType({"type": ["array", "string"]})),
+        th.Property("marketplace_id", th.StringType),
+    ).to_dict()
+
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=3,
+    )
+    @timeout(15)
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        try:
+            # if context is not None:
+            asin = context.get("ASIN")
+            catalog = self.get_sp_catalog(marketplace_id=context.get("marketplace_id"))
+            if context.get("marketplace_id") == "JP":
+                items = catalog.list_items(JAN=asin).payload
+            elif context.get("marketplace_id") in ["FR"]:
+                items = catalog.list_items(EAN=asin).payload
+            else:
+                items = catalog.get_item(asin=asin).payload
+            if "Items" in items:
+                if len(items["Items"]) > 0:
+                    items = items["Items"][0]
+            items.update({"ASIN": asin})
+            items.update({"marketplace_id": context.get("marketplace_id")})
+            return [items]
+            # else:
+            #     return []
+        except Exception as e:
+            raise InvalidResponse(e)
