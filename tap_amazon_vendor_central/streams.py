@@ -16,6 +16,14 @@ from abc import abstractproperty
 import pytz
 import json
 
+# Replication methods
+REPLICATION_FULL_TABLE = "FULL_TABLE"
+REPLICATION_INCREMENTAL = "INCREMENTAL"
+REPLICATION_LOG_BASED = "LOG_BASED"
+
+from singer_sdk.helpers._state import (
+    increment_state,
+)
 
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
@@ -528,53 +536,6 @@ class VendorsTrafficReportStream(VendorsReportStream):
     ).to_dict()
 
 
-class VendorsInventoryReportStream(VendorsReportStream):
-    """Define custom stream."""
-
-    name = "vendor_inventory_report"
-    primary_keys = None
-    replication_key = "report_end_date"
-    report_id = None
-    document_id = None
-    report_name = "GET_VENDOR_INVENTORY_REPORT"
-    report_options = {
-        "reportPeriod": "DAY",
-        "sellingProgram": "RETAIL",
-        "distributorView": "MANUFACTURING",
-    }
-    correct_end_date_minus_days = 3
-    schema = th.PropertiesList(
-        th.Property("reportId", th.StringType),
-        th.Property(
-            "reportSpecification", th.CustomType({"type": ["object", "string"]})
-        ),
-        th.Property("inventoryAggregate", th.CustomType({"type": ["array", "string"]})),
-        th.Property("inventoryByAsin", th.CustomType({"type": ["array", "string"]})),
-        th.Property("report_end_date", th.DateTimeType),
-    ).to_dict()
-    # def get_marketplace_code(self,marketplace_id):
-    #     for marketplace in Marketplaces:
-    #         if marketplace_id == marketplace.marketplace_id:
-    #             return marketplace.name
-    # def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
-    #     """Return a context dictionary for child streams."""
-    #     marketplace_id = None
-    #     if record.get("reportSpecification"):
-    #         if record['reportSpecification'].get("marketplaceIds"):
-    #             if len(record['reportSpecification']['marketplaceIds'])>0:
-    #                 marketplace_id = record['reportSpecification']['marketplaceIds'][0]
-    #                 marketplace_id = self.get_marketplace_code(marketplace_id)
-    #     return {"products":record['inventoryByAsin'],"marketplace_id":marketplace_id}
-    # def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
-
-    #     with open("./vendor_inventory_report_sample.json") as file:
-    #         data = json.load(file)
-
-    #     data = [data]
-    #     for row in data:
-    #         yield row
-
-
 class VendorsForecastingReportStream(VendorsReportStream):
     """Define custom stream."""
 
@@ -762,6 +723,58 @@ class VendorsTrafficRealtimeReportStream(VendorsReportStream):
         return start_date.strftime("%Y-%m-%dT00:00:00")
 
 
+class VendorsInventoryReportStream(VendorsReportStream):
+    """Define custom stream."""
+
+    name = "vendor_inventory_report"
+    primary_keys = None
+    replication_key = None
+    report_id = None
+    document_id = None
+    products = []
+    report_name = "GET_VENDOR_INVENTORY_REPORT"
+    report_options = {
+        "reportPeriod": "DAY",
+        "sellingProgram": "RETAIL",
+        "distributorView": "MANUFACTURING",
+    }
+    correct_end_date_minus_days = 3
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
+        th.Property("inventoryAggregate", th.CustomType({"type": ["array", "string"]})),
+        th.Property("inventoryByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
+    def get_marketplace_code(self,marketplace_id):
+        for marketplace in Marketplaces:
+            if marketplace_id == marketplace.marketplace_id:
+                return marketplace.name
+    def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
+        """Return a context dictionary for child streams."""
+        marketplace_id = None
+        if record.get("reportSpecification"):
+            if record['reportSpecification'].get("marketplaceIds"):
+                if len(record['reportSpecification']['marketplaceIds'])>0:
+                    marketplace_id = record['reportSpecification']['marketplaceIds'][0]
+                    marketplace_id = self.get_marketplace_code(marketplace_id)
+        self.products = record['inventoryByAsin'] 
+        
+        return {"products":record['inventoryByAsin'],"marketplace_id":str(marketplace_id)}
+    def get_products(self):
+        return self.products
+        
+    # def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
+
+    #     with open("./vendor_inventory_report_sample.json") as file:
+    #         data = json.load(file)
+
+    #     data = [data]
+    #     for row in data:
+    #         yield row
+
 class InventoryProductsListStream(VendorsReportStream):
     """Define custom stream."""
 
@@ -770,14 +783,11 @@ class InventoryProductsListStream(VendorsReportStream):
     report_id = None
     document_id = None
     previous_items = []
+    replication_key = None
     parent_stream_type = VendorsInventoryReportStream
     report_name = "GET_VENDOR_INVENTORY_REPORT"
-    report_options = {
-        "reportPeriod": "DAY",
-        "sellingProgram": "RETAIL",
-        "distributorView": "MANUFACTURING",
-    }
-    correct_end_date_minus_days = 3
+    report_options = {}
+    
     schema = th.PropertiesList(
         th.Property("asin", th.StringType),
     ).to_dict()
@@ -793,12 +803,49 @@ class InventoryProductsListStream(VendorsReportStream):
         for record in records:
             transformed_record = self.post_process(record, context)
             if transformed_record["asin"] in self.previous_items:
-                return None
+                continue
             if transformed_record is None:
                 # Record filtered out during post_process()
                 continue
             self.previous_items.append(transformed_record["asin"])
             yield transformed_record.copy()
+
+    def get_timestamp_for_files(self):
+        return (
+            datetime
+                .now()
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "")
+                .replace("-", "")
+                .replace(":", "")
+        )
+    def _increment_stream_state(
+        self, latest_record: Dict[str, Any], *, context: Optional[dict] = None
+    ) -> None:
+        #We do
+        context.update({"products":[self.get_timestamp_for_files()]})
+        state_dict = self.get_context_state(context)
+        if latest_record:
+            if self.replication_method in [
+                REPLICATION_INCREMENTAL,
+                REPLICATION_LOG_BASED,
+            ]:
+                if not self.replication_key:
+                    raise ValueError(
+                        f"Could not detect replication key for '{self.name}' stream"
+                        f"(replication method={self.replication_method})"
+                    )
+                treat_as_sorted = self.is_sorted
+                if not treat_as_sorted and self.state_partitioning_keys is not None:
+                    # Streams with custom state partitioning are not resumable.
+                    treat_as_sorted = False
+                increment_state(
+                    state_dict,
+                    replication_key=self.replication_key,
+                    latest_record=latest_record,
+                    is_sorted=treat_as_sorted,
+                )        
 
 
 class ProductDetails(AmazonSellerStream):
@@ -810,11 +857,13 @@ class ProductDetails(AmazonSellerStream):
     asin = "{ASIN}"
     parent_stream_type = InventoryProductsListStream
     schema = th.PropertiesList(
-        th.Property("ASIN", th.StringType),
-        th.Property("Identifiers", th.CustomType({"type": ["object", "string"]})),
-        th.Property("AttributeSets", th.CustomType({"type": ["array", "string"]})),
-        th.Property("Relationships", th.CustomType({"type": ["array", "string"]})),
-        th.Property("SalesRankings", th.CustomType({"type": ["array", "string"]})),
+        th.Property("asin", th.StringType),
+        th.Property("attributes", th.CustomType({"type": ["object", "string"]})),
+        th.Property("identifiers", th.CustomType({"type": ["array", "string"]})),
+        th.Property("productTypes", th.CustomType({"type": ["array", "string"]})),
+        th.Property("ranks", th.CustomType({"type": ["array", "string"]})),
+        th.Property("salesRanks", th.CustomType({"type": ["array", "string"]})),
+        th.Property("summaries", th.CustomType({"type": ["array", "string"]})),
         th.Property("marketplace_id", th.StringType),
     ).to_dict()
 
@@ -827,19 +876,20 @@ class ProductDetails(AmazonSellerStream):
     @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         try:
+            includedData = ["attributes,summaries,identifiers,productTypes,salesRanks"]
             # if context is not None:
             asin = context.get("ASIN")
             catalog = self.get_sp_catalog(marketplace_id=context.get("marketplace_id"))
             if context.get("marketplace_id") == "JP":
-                items = catalog.list_items(JAN=asin).payload
+                items = catalog.get_catalog_item(JAN=asin).payload
             elif context.get("marketplace_id") in ["FR"]:
-                items = catalog.list_items(EAN=asin).payload
+                items = catalog.get_catalog_item(EAN=asin).payload
             else:
-                items = catalog.get_item(asin=asin).payload
+                items = catalog.get_catalog_item(asin=asin,includedData=includedData).payload
             if "Items" in items:
                 if len(items["Items"]) > 0:
                     items = items["Items"][0]
-            items.update({"ASIN": asin})
+            
             items.update({"marketplace_id": context.get("marketplace_id")})
             return [items]
             # else:
