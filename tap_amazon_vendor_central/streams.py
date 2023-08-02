@@ -15,6 +15,7 @@ from sp_api.base import Marketplaces
 from abc import abstractproperty
 import pytz
 import json
+import os
 
 # Replication methods
 REPLICATION_FULL_TABLE = "FULL_TABLE"
@@ -24,6 +25,8 @@ REPLICATION_LOG_BASED = "LOG_BASED"
 from singer_sdk.helpers._state import (
     increment_state,
 )
+
+__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
@@ -373,6 +376,7 @@ class VendorsReportStream(AmazonSellerStream):
 
     lookback_days = 1460
     correct_end_date_minus_days = 2
+    products_context = []
 
     @abstractproperty
     def name(self):
@@ -755,14 +759,17 @@ class VendorsInventoryReportStream(VendorsReportStream):
     def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
         """Return a context dictionary for child streams."""
         marketplace_id = None
+        
         if record.get("reportSpecification"):
             if record['reportSpecification'].get("marketplaceIds"):
                 if len(record['reportSpecification']['marketplaceIds'])>0:
                     marketplace_id = record['reportSpecification']['marketplaceIds'][0]
                     marketplace_id = self.get_marketplace_code(marketplace_id)
         self.products = record['inventoryByAsin'] 
-        
-        return {"products":record['inventoryByAsin'],"marketplace_id":str(marketplace_id)}
+        data = {"products":record['inventoryByAsin'],"marketplace_id":str(marketplace_id)}
+        #store the context data in a parent class variable
+        VendorsReportStream.products_context = data
+        return {"marketplace_id":str(marketplace_id)}
     def get_products(self):
         return self.products
         
@@ -798,8 +805,10 @@ class InventoryProductsListStream(VendorsReportStream):
 
     def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
         records = None
-        if context.get("products"):
-            records = context["products"]
+        content = VendorsReportStream.products_context
+
+        if content.get("products"):
+            records = content["products"]
         for record in records:
             transformed_record = self.post_process(record, context)
             if transformed_record["asin"] in self.previous_items:
@@ -809,6 +818,7 @@ class InventoryProductsListStream(VendorsReportStream):
                 continue
             self.previous_items.append(transformed_record["asin"])
             yield transformed_record.copy()
+
 
     def get_timestamp_for_files(self):
         return (
