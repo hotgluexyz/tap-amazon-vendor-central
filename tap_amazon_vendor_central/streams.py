@@ -28,6 +28,7 @@ from singer_sdk.helpers._state import (
 
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
+
 class MarketplacesStream(AmazonSellerStream):
     """Define custom stream."""
 
@@ -420,6 +421,24 @@ class VendorsReportStream(AmazonSellerStream):
     def get_start_date_formatted(self, start_date):
         return start_date.strftime("%Y-%m-%dT00:00:00")
 
+    @property
+    def distributor_report_options(self) -> dict:
+        report_options = {
+            "reportPeriod": "DAY",
+            "sellingProgram": "RETAIL",
+            "distributorView": "MANUFACTURING"
+        }
+        return report_options
+    
+    @property
+    def distributor_report_options_sourcing(self) -> dict:
+        report_options = {
+            "reportPeriod": "DAY",
+            "sellingProgram": "RETAIL",
+            "distributorView": "SOURCING"
+        }
+        return report_options
+
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -502,11 +521,11 @@ class VendorsSalesReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_SALES_REPORT"
-    report_options = {
-        "reportPeriod": "DAY",
-        "sellingProgram": "RETAIL",
-        "distributorView": "MANUFACTURING",
-    }
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options
+
     correct_end_date_minus_days = 3
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
@@ -608,12 +627,12 @@ class VendorsSalesRealtimeReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_REAL_TIME_SALES_REPORT"
-    report_options = {
-        "reportPeriod": "DAY",
-        "sellingProgram": "RETAIL",
-        "distributorView": "MANUFACTURING",
-    }
     lookback_days = 13
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options
+
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
         th.Property(
@@ -656,12 +675,12 @@ class VendorsInventoryRealtimeReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_REAL_TIME_INVENTORY_REPORT"
-    report_options = {
-        "reportPeriod": "DAY",
-        "sellingProgram": "RETAIL",
-        "distributorView": "MANUFACTURING",
-    }
     lookback_days = 6
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options
+
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
         th.Property(
@@ -737,12 +756,12 @@ class VendorsInventoryReportStream(VendorsReportStream):
     document_id = None
     products = []
     report_name = "GET_VENDOR_INVENTORY_REPORT"
-    report_options = {
-        "reportPeriod": "DAY",
-        "sellingProgram": "RETAIL",
-        "distributorView": "MANUFACTURING",
-    }
     correct_end_date_minus_days = 3
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options
+
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
         th.Property(
@@ -752,27 +771,33 @@ class VendorsInventoryReportStream(VendorsReportStream):
         th.Property("inventoryByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
-    def get_marketplace_code(self,marketplace_id):
+
+    def get_marketplace_code(self, marketplace_id):
         for marketplace in Marketplaces:
             if marketplace_id == marketplace.marketplace_id:
                 return marketplace.name
+
     def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
         """Return a context dictionary for child streams."""
         marketplace_id = None
-        
+
         if record.get("reportSpecification"):
-            if record['reportSpecification'].get("marketplaceIds"):
-                if len(record['reportSpecification']['marketplaceIds'])>0:
-                    marketplace_id = record['reportSpecification']['marketplaceIds'][0]
+            if record["reportSpecification"].get("marketplaceIds"):
+                if len(record["reportSpecification"]["marketplaceIds"]) > 0:
+                    marketplace_id = record["reportSpecification"]["marketplaceIds"][0]
                     marketplace_id = self.get_marketplace_code(marketplace_id)
-        self.products = record['inventoryByAsin'] 
-        data = {"products":record['inventoryByAsin'],"marketplace_id":str(marketplace_id)}
-        #store the context data in a parent class variable
+        self.products = record["inventoryByAsin"]
+        data = {
+            "products": record["inventoryByAsin"],
+            "marketplace_id": str(marketplace_id),
+        }
+        # store the context data in a parent class variable
         VendorsReportStream.products_context = data
-        return {"marketplace_id":str(marketplace_id)}
+        return {"marketplace_id": str(marketplace_id)}
+
     def get_products(self):
         return self.products
-        
+
     # def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
 
     #     with open("./vendor_inventory_report_sample.json") as file:
@@ -781,6 +806,7 @@ class VendorsInventoryReportStream(VendorsReportStream):
     #     data = [data]
     #     for row in data:
     #         yield row
+
 
 class InventoryProductsListStream(VendorsReportStream):
     """Define custom stream."""
@@ -794,7 +820,7 @@ class InventoryProductsListStream(VendorsReportStream):
     parent_stream_type = VendorsInventoryReportStream
     report_name = "GET_VENDOR_INVENTORY_REPORT"
     report_options = {}
-    
+
     schema = th.PropertiesList(
         th.Property("asin", th.StringType),
     ).to_dict()
@@ -819,22 +845,21 @@ class InventoryProductsListStream(VendorsReportStream):
             self.previous_items.append(transformed_record["asin"])
             yield transformed_record.copy()
 
-
     def get_timestamp_for_files(self):
         return (
-            datetime
-                .now()
-                .replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "")
-                .replace("-", "")
-                .replace(":", "")
+            datetime.now()
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "")
+            .replace("-", "")
+            .replace(":", "")
         )
+
     def _increment_stream_state(
         self, latest_record: Dict[str, Any], *, context: Optional[dict] = None
     ) -> None:
-        #We do
-        context.update({"products":[self.get_timestamp_for_files()]})
+        # We do
+        context.update({"products": [self.get_timestamp_for_files()]})
         state_dict = self.get_context_state(context)
         if latest_record:
             if self.replication_method in [
@@ -855,7 +880,7 @@ class InventoryProductsListStream(VendorsReportStream):
                     replication_key=self.replication_key,
                     latest_record=latest_record,
                     is_sorted=treat_as_sorted,
-                )        
+                )
 
 
 class ProductDetails(AmazonSellerStream):
@@ -895,14 +920,60 @@ class ProductDetails(AmazonSellerStream):
             elif context.get("marketplace_id") in ["FR"]:
                 items = catalog.get_catalog_item(EAN=asin).payload
             else:
-                items = catalog.get_catalog_item(asin=asin,includedData=includedData).payload
+                items = catalog.get_catalog_item(
+                    asin=asin, includedData=includedData
+                ).payload
             if "Items" in items:
                 if len(items["Items"]) > 0:
                     items = items["Items"][0]
-            
+
             items.update({"marketplace_id": context.get("marketplace_id")})
             return [items]
             # else:
             #     return []
         except Exception as e:
             raise InvalidResponse(e)
+
+class VendorsSalesSourcingReportStream(VendorsSalesReportStream):
+    """Define custom stream."""
+
+    name = "vendor_sales_sourcing_report"
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options_sourcing
+class VendorsSalesRealtimeSourcingReportStream(VendorsSalesRealtimeReportStream):
+    """Define custom stream."""
+
+    name = "vendor_sales_realtime_sourcing_report"
+
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options_sourcing
+
+class VendorsInventorySourcingRealtimeReportStream(VendorsInventoryRealtimeReportStream):
+    """Define custom stream."""
+
+    name = "vendor_inventory_realtime_sourcing_report"
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options_sourcing    
+
+class VendorsInventorySourcingReportStream(VendorsInventoryReportStream):
+    """Define custom stream."""
+
+    name = "vendor_inventory_sourcing_report"
+    products = []
+
+    @property
+    def report_options(self) -> dict:
+        return self.distributor_report_options_sourcing   
+
+class InventoryProductsSourcingListStream(InventoryProductsListStream):
+    
+    name = "inventory_product_sourcing_list"
+    previous_items = []
+    parent_stream_type = VendorsInventorySourcingReportStream
+    report_options = {}     

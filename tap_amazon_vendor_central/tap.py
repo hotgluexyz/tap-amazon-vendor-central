@@ -21,6 +21,11 @@ from tap_amazon_vendor_central.streams import (
     VendorsTrafficRealtimeReportStream,
     InventoryProductsListStream,
     ProductDetails,
+    VendorsSalesSourcingReportStream,
+    VendorsSalesRealtimeSourcingReportStream,
+    VendorsInventorySourcingRealtimeReportStream,
+    VendorsInventorySourcingReportStream,
+    InventoryProductsSourcingListStream,
 )
 
 STREAM_TYPES = [
@@ -38,6 +43,11 @@ STREAM_TYPES = [
     VendorsTrafficRealtimeReportStream,
     InventoryProductsListStream,
     ProductDetails,
+    VendorsSalesSourcingReportStream,
+    VendorsSalesRealtimeSourcingReportStream,
+    VendorsInventorySourcingRealtimeReportStream,
+    VendorsInventorySourcingReportStream,
+    InventoryProductsSourcingListStream,
 ]
 
 

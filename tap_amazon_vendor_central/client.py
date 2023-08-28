@@ -14,7 +14,7 @@ from sp_api.api import (
     VendorDirectFulfillmentOrders,
     VendorDirectFulfillmentShipping,
     VendorOrders,
-    CatalogItems
+    CatalogItems,
 )
 from sp_api.base import Marketplaces
 import csv
