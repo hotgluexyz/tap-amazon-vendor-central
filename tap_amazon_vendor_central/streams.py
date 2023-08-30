@@ -942,24 +942,6 @@ class VendorsSalesSourcingReportStream(VendorsSalesReportStream):
     @property
     def report_options(self) -> dict:
         return self.distributor_report_options_sourcing
-class VendorsSalesRealtimeSourcingReportStream(VendorsSalesRealtimeReportStream):
-    """Define custom stream."""
-
-    name = "vendor_sales_realtime_sourcing_report"
-
-
-    @property
-    def report_options(self) -> dict:
-        return self.distributor_report_options_sourcing
-
-class VendorsInventorySourcingRealtimeReportStream(VendorsInventoryRealtimeReportStream):
-    """Define custom stream."""
-
-    name = "vendor_inventory_realtime_sourcing_report"
-
-    @property
-    def report_options(self) -> dict:
-        return self.distributor_report_options_sourcing    
 
 class VendorsInventorySourcingReportStream(VendorsInventoryReportStream):
     """Define custom stream."""
