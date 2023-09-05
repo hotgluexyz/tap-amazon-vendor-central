@@ -459,6 +459,12 @@ class VendorsReportStream(AmazonSellerStream):
                     self.config.get("start_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
             current_date = self.get_current_datetime()
+            global_end_date = current_date
+            if self.config.get("end_date"):
+                global_end_date = datetime.strptime(
+                    self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
+                )
+
             minimum_start_date = current_date - timedelta(days=self.lookback_days)
             if start_date < minimum_start_date:
                 # Reset start date to days limit if it is greater than 1460 days
@@ -476,7 +482,7 @@ class VendorsReportStream(AmazonSellerStream):
                 marketplace_id = context.get("marketplace_id")
 
             report = self.get_sp_reports(marketplace_id=marketplace_id)
-            while start_date <= current_date:
+            while start_date <= current_date and start_date <= global_end_date:
                 start_date_f = self.get_start_date_formatted(start_date)
                 end_date_f = self.format_end_date(end_date)
                 items = self.get_reports_list(
