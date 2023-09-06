@@ -500,6 +500,7 @@ class VendorsReportStream(AmazonSellerStream):
                     )
                     for row in reports:
                         row.update({"report_end_date": end_date.isoformat()})
+                        row = self.post_process(row,context)
                         yield row
 
                 # If reports are form loop through, download documents and populate the data.txt
@@ -508,6 +509,7 @@ class VendorsReportStream(AmazonSellerStream):
                     for report_row in reports:
                         # if context is not None:
                         report_row.update({"report_end_date": end_date.isoformat()})
+                        report_row = self.post_process(report_row, context)
                         yield report_row
                 # Move to the next time period
                 start_date = end_date + timedelta(days=1)
@@ -542,6 +544,16 @@ class VendorsSalesReportStream(VendorsReportStream):
         th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
+    def get_max_date(self,data,date_key="endDate"):
+        max_date_dict = max(data, key=lambda x: x[date_key])
+        max_date_str = max_date_dict["endDate"]
+        # Convert the maximum date to ISO date format
+        max_date_iso = datetime.strptime(max_date_str, "%Y-%m-%d").date().isoformat()
+        return max_date_iso
+
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        row['report_end_date'] = self.get_max_date(row.get("salesByAsin"))
+        return row
 
 
 class VendorsTrafficReportStream(VendorsReportStream):
