@@ -284,6 +284,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
     replication_key = "purchaseOrderStateChangedDate"
     parent_stream_type = MarketplacesStream
     marketplace_id = "{marketplace_id}"
+    next_token = None
 
     schema = th.PropertiesList(
         th.Property("purchaseOrderNumber", th.StringType),
@@ -309,6 +310,8 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         """
         try:
             orders = self.get_sp_vendor(mp)
+            if self.next_token is not None:
+                kwargs.update({"nextToken": self.next_token})
             orders_obj = orders.get_purchase_orders(**kwargs)
             return orders_obj
         except Exception as e:
@@ -320,6 +323,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         """
         for page in self.load_all_orders(mp, **kwargs):
             orders = []
+            self.next_token = page.next_token
             for order in page.payload.get("orders", []):
                 orders.append(order)
 
