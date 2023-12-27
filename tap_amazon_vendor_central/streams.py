@@ -494,6 +494,7 @@ class VendorsReportStream(AmazonSellerStream):
                 )
 
                 if not items["reports"]:
+                    self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {self.report_options}")
                     reports = self.create_report(
                         report,
                         start_date_f,
@@ -506,13 +507,15 @@ class VendorsReportStream(AmazonSellerStream):
                         row.update({"report_end_date": end_date.isoformat()})
                         row = self.post_process(row,context)
                         yield row
-
-                # If reports are form loop through, download documents and populate the data.txt
+                
+                # If reports are found loop through, download documents and populate the data.txt
                 for row in items["reports"]:
+                    self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
                     reports = self.check_report(row["reportId"], report, "json")
                     for report_row in reports:
                         # if context is not None:
                         report_row.update({"report_end_date": end_date.isoformat()})
+                        self.logger.info(f"Processing pre-existing report row: {report_row}")
                         report_row = self.post_process(report_row, context)
                         yield report_row
                 # Move to the next time period
@@ -621,6 +624,7 @@ class VendorsForecastingReportStream(VendorsReportStream):
             items = self.get_reports_list(report, report_types, processing_status)
 
             if not items["reports"]:
+                self.logger.info(f"Creating new report. ReportName:{self.report_name}, ReportOptions: {self.report_options}")
                 reports = self.create_report(
                     reports=report,
                     type=self.report_name,
@@ -632,8 +636,10 @@ class VendorsForecastingReportStream(VendorsReportStream):
 
             # If reports are form loop through, download documents and populate the data.txt
             for row in items["reports"]:
+                self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
                 reports = self.check_report(row["reportId"], report, "json")
                 for report_row in reports:
+                    self.logger.info(f"Processing pre-existing report row: {report_row}")
                     yield report_row
 
         except Exception as e:
