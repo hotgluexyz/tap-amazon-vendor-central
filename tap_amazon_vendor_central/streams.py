@@ -489,35 +489,22 @@ class VendorsReportStream(AmazonSellerStream):
             while start_date <= current_date and start_date <= global_end_date:
                 start_date_f = self.get_start_date_formatted(start_date)
                 end_date_f = self.format_end_date(end_date)
-                items = self.get_reports_list(
-                    report, report_types, processing_status, start_date_f, end_date_f
-                )
 
-                if not items["reports"]:
-                    self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {self.report_options}")
-                    reports = self.create_report(
-                        report,
-                        start_date_f,
-                        end_date_f,
-                        self.report_name,
-                        reportOptions=self.report_options,
-                        report_type="json",
-                    )
-                    for row in reports:
-                        row.update({"report_end_date": end_date.isoformat()})
-                        row = self.post_process(row,context)
-                        yield row
+                #Process only reports created by the tap
+                self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {self.report_options}")
+                reports = self.create_report(
+                    report,
+                    start_date_f,
+                    end_date_f,
+                    self.report_name,
+                    reportOptions=self.report_options,
+                    report_type="json",
+                )
+                for row in reports:
+                    row.update({"report_end_date": end_date.isoformat()})
+                    row = self.post_process(row,context)
+                    yield row
                 
-                # If reports are found loop through, download documents and populate the data.txt
-                for row in items["reports"]:
-                    self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
-                    reports = self.check_report(row["reportId"], report, "json")
-                    for report_row in reports:
-                        # if context is not None:
-                        report_row.update({"report_end_date": end_date.isoformat()})
-                        self.logger.info(f"Processing pre-existing report row: {report_row}")
-                        report_row = self.post_process(report_row, context)
-                        yield report_row
                 # Move to the next time period
                 start_date = end_date + timedelta(days=1)
                 end_date += timedelta(days=14)
@@ -779,7 +766,8 @@ class VendorsInventoryReportStream(VendorsReportStream):
 
     name = "vendor_inventory_report"
     primary_keys = None
-    replication_key = None
+    #No replication key here because we might miss updated products. The updates in products does not guarantee update in the inventory 
+    replication_key = None 
     report_id = None
     document_id = None
     products = []
