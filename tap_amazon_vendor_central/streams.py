@@ -767,7 +767,7 @@ class VendorsInventoryReportStream(VendorsReportStream):
     name = "vendor_inventory_report"
     primary_keys = None
     #No replication key here because we might miss updated products. The updates in products does not guarantee update in the inventory 
-    replication_key = None 
+    replication_key = "report_end_date" 
     report_id = None
     document_id = None
     products = []
@@ -834,6 +834,7 @@ class InventoryProductsListStream(VendorsReportStream):
     previous_items = []
     replication_key = None
     parent_stream_type = VendorsInventoryReportStream
+    ignore_parent_replication_key = True
     report_name = "GET_VENDOR_INVENTORY_REPORT"
     report_options = {}
 
@@ -907,6 +908,7 @@ class ProductDetails(AmazonSellerStream):
     replication_key = None
     asin = "{ASIN}"
     parent_stream_type = InventoryProductsListStream
+    ignore_parent_replication_key = True
     schema = th.PropertiesList(
         th.Property("asin", th.StringType),
         th.Property("attributes", th.CustomType({"type": ["object", "string"]})),
