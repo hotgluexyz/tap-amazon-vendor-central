@@ -382,6 +382,8 @@ class VendorsReportStream(AmazonSellerStream):
     lookback_days = 1460
     correct_end_date_minus_days = 2
     products_context = []
+    selling_programs = []
+    current_selling_program = None
 
     @abstractproperty
     def name(self):
@@ -489,15 +491,17 @@ class VendorsReportStream(AmazonSellerStream):
             while start_date <= current_date and start_date <= global_end_date:
                 start_date_f = self.get_start_date_formatted(start_date)
                 end_date_f = self.format_end_date(end_date)
-
+                report_options = self.report_options
+                if self.current_selling_program:
+                    report_options.update({"sellingProgram": self.current_selling_program})
                 #Process only reports created by the tap
-                self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {self.report_options}")
+                self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {report_options}")
                 reports = self.create_report(
                     report,
                     start_date_f,
                     end_date_f,
                     self.report_name,
-                    reportOptions=self.report_options,
+                    reportOptions=report_options,
                     report_type="json",
                 )
                 for row in reports:
@@ -523,6 +527,7 @@ class VendorsSalesReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_SALES_REPORT"
+    selling_programs = ['BUSINESS','FRESH','RETAIL']
 
     @property
     def report_options(self) -> dict:
@@ -548,6 +553,15 @@ class VendorsSalesReportStream(VendorsReportStream):
     def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
         row['report_end_date'] = self.get_max_date(row.get("salesByAsin"))
         return row
+    
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        """
+        Override the get_records function so we could yield all of sellingProgram type report for each time period
+        """
+        for program in self.selling_programs:
+            # Reset current selling program so it could be used by the parent function when creating the report.
+            self.current_selling_program = program
+            yield from super().get_records(context)
 
 
 class VendorsTrafficReportStream(VendorsReportStream):
@@ -572,7 +586,9 @@ class VendorsTrafficReportStream(VendorsReportStream):
 
 
 class VendorsForecastingReportStream(VendorsReportStream):
-    """Define custom stream."""
+    """Report stream for Forecasting report
+       URL: https://developer-docs.amazon.com/sp-api/docs/report-type-values-analytics#vendor-forecasting-report
+    """
 
     name = "vendor_forecasting_report"
     primary_keys = None
@@ -580,6 +596,8 @@ class VendorsForecastingReportStream(VendorsReportStream):
     report_id = None
     document_id = None
     report_name = "GET_VENDOR_FORECASTING_REPORT"
+    #Leaving it here we need to add support for iterating through selling programs
+    selling_programs = ['RETAIL','FRESH'] 
     report_options = {"sellingProgram": "RETAIL"}
     schema = th.PropertiesList(
         th.Property("reportId", th.StringType),
@@ -646,6 +664,7 @@ class VendorsSalesRealtimeReportStream(VendorsReportStream):
 
     @property
     def report_options(self) -> dict:
+        #Changing sellerProgram has no affect on this report it is ignored when creating a report.
         return self.distributor_report_options
 
     schema = th.PropertiesList(
@@ -773,6 +792,8 @@ class VendorsInventoryReportStream(VendorsReportStream):
     products = []
     report_name = "GET_VENDOR_INVENTORY_REPORT"
     correct_end_date_minus_days = 3
+    #Leaving it here we need to add support for iterating through selling programs
+    selling_programs = ['RETAIL','FRESH']
 
     @property
     def report_options(self) -> dict:
