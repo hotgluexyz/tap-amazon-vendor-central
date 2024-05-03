@@ -551,7 +551,9 @@ class VendorsSalesReportStream(VendorsReportStream):
         return max_date_iso
 
     def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
-        row['report_end_date'] = self.get_max_date(row.get("salesByAsin"))
+        #For newly added sellingProgram(Fresh) this property is coming as empty list.
+        if row.get("salesByAsin"):
+            row['report_end_date'] = self.get_max_date(row.get("salesByAsin")) 
         return row
     
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
