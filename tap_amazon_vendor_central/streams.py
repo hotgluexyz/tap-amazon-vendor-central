@@ -9,13 +9,14 @@ from sp_api.util import load_all_pages
 
 from tap_amazon_vendor_central.client import AmazonSellerStream
 from tap_amazon_vendor_central.utils import InvalidResponse, timeout
-from sp_api.base.exceptions import SellingApiServerException
+from sp_api.base.exceptions import SellingApiServerException,SellingApiNotFoundException
 from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 from abc import abstractproperty
 import pytz
 import json
 import os
+from dateutil.parser import parse
 
 # Replication methods
 REPLICATION_FULL_TABLE = "FULL_TABLE"
@@ -164,9 +165,7 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
             start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
             start_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
             if self.config.get("end_date"):
-                end_date = datetime.strptime(
-                    self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
+                end_date = parse(self.config.get("end_date"))
             else:
                 # End date required by the endpoint
                 end_date = datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -251,9 +250,7 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
             start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
             start_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
             if self.config.get("end_date"):
-                end_date = datetime.strptime(
-                    self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
+                end_date = parse(self.config.get("end_date"))
             else:
                 # End date required by the endpoint
                 end_date = datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -341,9 +338,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
             start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
             start_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
             if self.config.get("end_date"):
-                end_date = datetime.strptime(
-                    self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
+                end_date = parse(self.config.get("end_date"))
             else:
                 # End date required by the endpoint
                 end_date = datetime.today().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -461,15 +456,11 @@ class VendorsReportStream(AmazonSellerStream):
                 start_date = start_date.replace(tzinfo=None)
             end_date = None
             if self.config.get("start_date") and not start_date:
-                start_date = datetime.strptime(
-                    self.config.get("start_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
+                start_date = parse(self.config.get("start_date"))
             current_date = self.get_current_datetime()
             global_end_date = current_date
             if self.config.get("end_date"):
-                global_end_date = datetime.strptime(
-                    self.config.get("end_date"), "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
+                global_end_date = parse(self.config.get("end_date"))
 
             minimum_start_date = current_date - timedelta(days=self.lookback_days)
             if start_date < minimum_start_date:
@@ -547,7 +538,7 @@ class VendorsSalesReportStream(VendorsReportStream):
         max_date_dict = max(data, key=lambda x: x[date_key])
         max_date_str = max_date_dict["endDate"]
         # Convert the maximum date to ISO date format
-        max_date_iso = datetime.strptime(max_date_str, "%Y-%m-%d").date().isoformat()
+        max_date_iso = parse(max_date_str).date().isoformat()
         return max_date_iso
 
     def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
@@ -972,6 +963,9 @@ class ProductDetails(AmazonSellerStream):
             return [items]
             # else:
             #     return []
+        except SellingApiNotFoundException as e:
+            self.logger.warn(e)
+            return []   
         except Exception as e:
             raise InvalidResponse(e)
 
