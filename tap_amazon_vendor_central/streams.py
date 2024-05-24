@@ -457,6 +457,8 @@ class VendorsReportStream(AmazonSellerStream):
             end_date = None
             if self.config.get("start_date") and not start_date:
                 start_date = parse(self.config.get("start_date"))
+                # Remove timezone info from the date so we can compare it with other dates.
+                start_date = start_date.replace(tzinfo=None)
             current_date = self.get_current_datetime()
             global_end_date = current_date
             if self.config.get("end_date"):
