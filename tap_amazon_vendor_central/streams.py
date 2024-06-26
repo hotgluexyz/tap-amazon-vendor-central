@@ -511,7 +511,23 @@ class VendorsReportStream(AmazonSellerStream):
             raise InvalidResponse(e)
 
 
-class VendorsSalesReportStream(VendorsReportStream):
+class VendorsSellingProgramsStream(VendorsReportStream):
+    """
+        This stream is used to get all the selling programs.
+        All of the streams supporting multiple selling
+    """
+
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        """
+        Override the get_records function so we could yield all of sellingProgram type report for each time period
+        """
+        for program in self.selling_programs:
+            # Reset current selling program so it could be used by the parent function when creating the report.
+            self.current_selling_program = program
+            yield from super().get_records(context)
+
+
+class VendorsSalesReportStream(VendorsSellingProgramsStream):
     """Define custom stream."""
 
     name = "vendor_sales_report"
@@ -548,15 +564,6 @@ class VendorsSalesReportStream(VendorsReportStream):
         if row.get("salesByAsin"):
             row['report_end_date'] = self.get_max_date(row.get("salesByAsin")) 
         return row
-    
-    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
-        """
-        Override the get_records function so we could yield all of sellingProgram type report for each time period
-        """
-        for program in self.selling_programs:
-            # Reset current selling program so it could be used by the parent function when creating the report.
-            self.current_selling_program = program
-            yield from super().get_records(context)
 
 
 class VendorsTrafficReportStream(VendorsReportStream):
@@ -580,12 +587,10 @@ class VendorsTrafficReportStream(VendorsReportStream):
     ).to_dict()
 
 
-class VendorsForecastingReportStream(VendorsReportStream):
+class VendorsForecastingReportBaseStream(VendorsReportStream):
     """Report stream for Forecasting report
        URL: https://developer-docs.amazon.com/sp-api/docs/report-type-values-analytics#vendor-forecasting-report
     """
-
-    name = "vendor_forecasting_report"
     primary_keys = None
     replication_key = None
     report_id = None
@@ -624,7 +629,12 @@ class VendorsForecastingReportStream(VendorsReportStream):
             items = self.get_reports_list(report, report_types, processing_status)
 
             if not items["reports"]:
-                self.logger.info(f"Creating new report. ReportName:{self.report_name}, ReportOptions: {self.report_options}")
+                report_options = self.report_options
+                if self.current_selling_program:
+                    report_options.update({"sellingProgram": self.current_selling_program})
+                self.logger.info(
+                    f"Creating new report. ReportName:{self.report_name}, ReportOptions: {report_options}"
+                )
                 reports = self.create_report(
                     reports=report,
                     type=self.report_name,
@@ -644,6 +654,18 @@ class VendorsForecastingReportStream(VendorsReportStream):
 
         except Exception as e:
             raise InvalidResponse(e)
+
+class VendorsForecastingReportStream(VendorsForecastingReportBaseStream):
+    name = "vendor_forecasting_report"
+    
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        """
+        Override the get_records function so we could yield all of sellingProgram type report for each time period
+        """
+        for program in self.selling_programs:
+            # Reset current selling program so it could be used by the parent function when creating the report.
+            self.current_selling_program = program
+            yield from super().get_records(context)
 
 
 class VendorsSalesRealtimeReportStream(VendorsReportStream):
@@ -775,7 +797,7 @@ class VendorsTrafficRealtimeReportStream(VendorsReportStream):
         return start_date.strftime("%Y-%m-%dT00:00:00")
 
 
-class VendorsInventoryReportStream(VendorsReportStream):
+class VendorsInventoryReportStream(VendorsSellingProgramsStream):
     """Define custom stream."""
 
     name = "vendor_inventory_report"
