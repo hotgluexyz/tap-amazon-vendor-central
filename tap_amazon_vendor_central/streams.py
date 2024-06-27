@@ -844,10 +844,11 @@ class VendorsInventoryReportStream(VendorsSellingProgramsStream):
         data = {
             "products": record["inventoryByAsin"],
             "marketplace_id": str(marketplace_id),
+            "report_end_date": record["report_end_date"],
         }
         # store the context data in a parent class variable
         VendorsReportStream.products_context = data
-        return {"marketplace_id": str(marketplace_id)}
+        return {"marketplace_id": str(marketplace_id), "report_end_date": record["report_end_date"]}
 
     def get_products(self):
         return self.products
@@ -870,19 +871,19 @@ class InventoryProductsListStream(VendorsReportStream):
     report_id = None
     document_id = None
     previous_items = []
-    replication_key = None
+    replication_key = "report_end_date"
     parent_stream_type = VendorsInventoryReportStream
-    ignore_parent_replication_key = True
     report_name = "GET_VENDOR_INVENTORY_REPORT"
     report_options = {}
 
     schema = th.PropertiesList(
         th.Property("asin", th.StringType),
+        th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
 
     def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
         """Return a context dictionary for child streams."""
-        return {"ASIN": record["asin"], "marketplace_id": context.get("marketplace_id")}
+        return {"ASIN": record["asin"], "marketplace_id": context.get("marketplace_id"), "report_end_date": context.get("report_end_date")}
 
     def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
         records = None
@@ -936,6 +937,9 @@ class InventoryProductsListStream(VendorsReportStream):
                     latest_record=latest_record,
                     is_sorted=treat_as_sorted,
                 )
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        row.update({"report_end_date": self.get_timestamp_for_files()})
+        return row
 
 
 class ProductDetails(AmazonSellerStream):
@@ -943,10 +947,9 @@ class ProductDetails(AmazonSellerStream):
 
     name = "product_details"
     primary_keys = ["ASIN"]
-    replication_key = None
+    replication_key = "report_end_date"
     asin = "{ASIN}"
     parent_stream_type = InventoryProductsListStream
-    ignore_parent_replication_key = True
     schema = th.PropertiesList(
         th.Property("asin", th.StringType),
         th.Property("attributes", th.CustomType({"type": ["object", "string"]})),
@@ -956,6 +959,7 @@ class ProductDetails(AmazonSellerStream):
         th.Property("salesRanks", th.CustomType({"type": ["array", "string"]})),
         th.Property("summaries", th.CustomType({"type": ["array", "string"]})),
         th.Property("marketplace_id", th.StringType),
+        th.Property("report_end_date", th.DateTimeType),
     ).to_dict()
 
     @backoff.on_exception(
@@ -983,7 +987,7 @@ class ProductDetails(AmazonSellerStream):
                 if len(items["Items"]) > 0:
                     items = items["Items"][0]
 
-            items.update({"marketplace_id": context.get("marketplace_id")})
+            items.update({"marketplace_id": context.get("marketplace_id"),"report_end_date": context.get("report_end_date")})
             return [items]
             # else:
             #     return []
