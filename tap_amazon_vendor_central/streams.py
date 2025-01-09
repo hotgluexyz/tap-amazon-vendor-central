@@ -17,6 +17,7 @@ import pytz
 import json
 import os
 from dateutil.parser import parse
+from tap_amazon_vendor_central.utils import get_valid_marketplaces_from_uri
 
 # Replication methods
 REPLICATION_FULL_TABLE = "FULL_TABLE"
@@ -58,28 +59,7 @@ class MarketplacesStream(AmazonSellerStream):
         if self.config.get("marketplaces"):
             marketplaces = self.config.get("marketplaces")
         else:
-            marketplaces = [
-                "US",
-                "CA",
-                "MX",
-                "BR",
-                "ES",
-                "GB",
-                "FR",
-                "NL",
-                "DE",
-                "IT",
-                "SE",
-                "PL",
-                "EG",
-                "TR",
-                "SA",
-                "AE",
-                "IN",
-                "SG",
-                "AU",
-                "JP",
-            ]
+            marketplaces = get_valid_marketplaces_from_uri(self.config.get("uri"))
 
         for mp in marketplaces:
             yield {"id": mp}
