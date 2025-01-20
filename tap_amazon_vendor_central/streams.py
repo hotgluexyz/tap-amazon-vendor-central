@@ -72,8 +72,6 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
     primary_keys = ["purchaseOrderNumber"]
     # TODO loook for relevant replication key in the live data
     replication_key = None
-    parent_stream_type = MarketplacesStream
-    marketplace_id = "{marketplace_id}"
 
     schema = th.PropertiesList(
         th.Property("purchaseOrderNumber", th.StringType),
@@ -175,8 +173,6 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
     primary_keys = ["purchaseOrderNumber"]
     # TODO loook for relevant key in live data
     replication_key = None
-    parent_stream_type = MarketplacesStream
-    marketplace_id = "{marketplace_id}"
 
     schema = th.PropertiesList(
         th.Property("purchaseOrderNumber", th.StringType),
@@ -259,8 +255,6 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
     name = "vendor_purchase_orders"
     primary_keys = ["purchaseOrderNumber"]
     replication_key = "purchaseOrderStateChangedDate"
-    parent_stream_type = MarketplacesStream
-    marketplace_id = "{marketplace_id}"
     next_token = None
 
     schema = th.PropertiesList(
