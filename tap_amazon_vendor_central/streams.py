@@ -154,8 +154,9 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
                     mp="ATVPDKIKX0DER", CreatedAfter="TEST_CASE_200"
                 )
             else:
+                marketplace_id = context.get("marketplace_id") if context else None
                 rows = self.load_order_page(
-                    mp=context.get("marketplace_id"),
+                    mp=marketplace_id,
                     createdBefore=end_date,
                     createdAfter=start_date,
                 )
@@ -237,8 +238,9 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
                     mp="ATVPDKIKX0DER", CreatedAfter="TEST_CASE_200"
                 )
             else:
+                marketplace_id = context.get("marketplace_id") if context else None
                 rows = self.load_order_page(
-                    mp=context.get("marketplace_id"),
+                    mp=marketplace_id,
                     # createdBefore=end_date,
                     # createdAfter=start_date,
                 )
@@ -323,8 +325,9 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
                     mp="ATVPDKIKX0DER", CreatedAfter="TEST_CASE_200"
                 )
             else:
+                marketplace_id = context.get("marketplace_id") if context else None
                 rows = self.load_order_page(
-                    mp=context.get("marketplace_id"),
+                    mp=marketplace_id,
                     createdAfter=start_date,
                     limit=100,
                     SortOrder="DESC",
@@ -353,6 +356,8 @@ class VendorsReportStream(AmazonSellerStream):
     products_context = []
     selling_programs = []
     current_selling_program = None
+
+    parent_stream_type = MarketplacesStream
 
     @abstractproperty
     def name(self):
@@ -470,6 +475,7 @@ class VendorsReportStream(AmazonSellerStream):
                     self.report_name,
                     reportOptions=report_options,
                     report_type="json",
+                    marketplace_id=marketplace_id
                 )
                 for row in reports:
                     row.update({"report_end_date": end_date.isoformat()})
@@ -509,6 +515,7 @@ class VendorsSalesReportStream(VendorsReportStream):
         th.Property("salesAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("salesByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
     def get_max_date(self,data,date_key="endDate"):
         max_date_dict = max(data, key=lambda x: x[date_key])
@@ -551,6 +558,7 @@ class VendorsTrafficReportStream(VendorsReportStream):
         th.Property("trafficAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("trafficByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
 
 
@@ -574,6 +582,7 @@ class VendorsForecastingReportStream(VendorsReportStream):
             "reportSpecification", th.CustomType({"type": ["object", "string"]})
         ),
         th.Property("forecastByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
 
     @backoff.on_exception(
@@ -604,6 +613,7 @@ class VendorsForecastingReportStream(VendorsReportStream):
                     type=self.report_name,
                     reportOptions=self.report_options,
                     report_type="json",
+                    marketplace_id=marketplace_id
                 )
                 for row in reports:
                     yield row
@@ -643,6 +653,7 @@ class VendorsSalesRealtimeReportStream(VendorsReportStream):
         ),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
 
     def get_current_datetime(self):
@@ -691,6 +702,7 @@ class VendorsInventoryRealtimeReportStream(VendorsReportStream):
         ),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
 
     def format_end_date(self, end_date):
@@ -729,6 +741,7 @@ class VendorsTrafficRealtimeReportStream(VendorsReportStream):
         ),
         th.Property("reportData", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
     # Need to add one more class to inherit from to make code DRY.
     def format_end_date(self, end_date):
@@ -776,6 +789,7 @@ class VendorsInventoryReportStream(VendorsReportStream):
         th.Property("inventoryAggregate", th.CustomType({"type": ["array", "string"]})),
         th.Property("inventoryByAsin", th.CustomType({"type": ["array", "string"]})),
         th.Property("report_end_date", th.DateTimeType),
+        th.Property("marketplace_id", th.StringType),
     ).to_dict()
 
     def get_marketplace_code(self, marketplace_id):
@@ -830,6 +844,7 @@ class InventoryProductsListStream(VendorsReportStream):
 
     schema = th.PropertiesList(
         th.Property("asin", th.StringType),
+        th.Property("marketplace_id", th.StringType)
     ).to_dict()
 
     def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
