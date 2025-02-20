@@ -165,6 +165,7 @@ class AmazonSellerStream(Stream):
         type="GET_LEDGER_DETAIL_VIEW_DATA",
         reportOptions=None,
         report_type="csv",
+        marketplace_id = None
     ):
         try:
             if start_date and end_date is not None:
@@ -173,16 +174,18 @@ class AmazonSellerStream(Stream):
                     dataStartTime=start_date,
                     dataEndTime=end_date,
                     reportOptions=reportOptions,
+                    marketplace_id=marketplace_id
                 ).payload
             elif start_date:
                 res = reports.create_report(
                     reportType=type,
                     dataStartTime=start_date,
                     reportOptions=reportOptions,
+                    marketplace_id=marketplace_id
                 ).payload
             else:
                 res = reports.create_report(
-                    reportType=type, reportOptions=reportOptions
+                    reportType=type, reportOptions=reportOptions, marketplace_id=marketplace_id
                 ).payload
 
             if "reportId" in res:
