@@ -18,6 +18,8 @@ import json
 import os
 from dateutil.parser import parse
 from tap_amazon_vendor_central.utils import get_valid_marketplaces_from_uri
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace
+import re
 
 # Replication methods
 REPLICATION_FULL_TABLE = "FULL_TABLE"
@@ -37,6 +39,7 @@ class MarketplacesStream(AmazonSellerStream):
     name = "vendor_marketplaces"
     primary_keys = ["id"]
     replication_key = None
+    valid_marketplace_code = None
     schema = th.PropertiesList(
         th.Property("id", th.StringType),
         th.Property("name", th.StringType),
@@ -60,9 +63,27 @@ class MarketplacesStream(AmazonSellerStream):
             marketplaces = self.config.get("marketplaces")
         else:
             marketplaces = get_valid_marketplaces_from_uri(self.config.get("uri"))
+            for mp in marketplaces:
+                if self.valid_marketplace_code:
+                    yield {"id": self.valid_marketplace_code}
+                    break
+                yield {"id": mp}
 
-        for mp in marketplaces:
-            yield {"id": mp}
+    def _sync_children(self, child_context: dict) -> None:
+        try:
+            return super()._sync_children(child_context)
+        except InvalidMarketplace as e: 
+            match = re.search(r"marketplace associated with the selling partner account: ([A-Z0-9]+)", str(e))
+            marketplace_id = match.group(1) if match else None
+            self.valid_marketplace_code = self.get_marketplace_code(marketplace_id)
+
+    def get_marketplace_code(self, marketplace_id):
+        """Find the 2-letter marketplace code for a given marketplace ID."""
+        for marketplace in Marketplaces:
+            if marketplace.value[1] == marketplace_id:  # Checking marketplace_id
+                return marketplace.name  # Returning the 2-letter code
+        return None
+
 
 
 class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
@@ -424,71 +445,67 @@ class VendorsReportStream(AmazonSellerStream):
         (Exception),
         max_tries=10,
         factor=3,
+        giveup=lambda e: isinstance(e, InvalidMarketplace) 
     )
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
-        try:
+        start_date = self.get_starting_timestamp(context)
+        if start_date:
+            # Remove timezone info from replication date so we can compare it with other dates.
+            start_date = start_date.replace(tzinfo=None)
+        end_date = None
+        if self.config.get("start_date") and not start_date:
+            start_date = parse(self.config.get("start_date"))
+            # Remove timezone info from the date so we can compare it with other dates.
+            start_date = start_date.replace(tzinfo=None)
+        current_date = self.get_current_datetime()
+        global_end_date = current_date
+        if self.config.get("end_date"):
+            global_end_date = parse(self.config.get("end_date"))
 
-            start_date = self.get_starting_timestamp(context)
-            if start_date:
-                # Remove timezone info from replication date so we can compare it with other dates.
-                start_date = start_date.replace(tzinfo=None)
-            end_date = None
-            if self.config.get("start_date") and not start_date:
-                start_date = parse(self.config.get("start_date"))
-                # Remove timezone info from the date so we can compare it with other dates.
-                start_date = start_date.replace(tzinfo=None)
-            current_date = self.get_current_datetime()
-            global_end_date = current_date
-            if self.config.get("end_date"):
-                global_end_date = parse(self.config.get("end_date"))
+        minimum_start_date = current_date - timedelta(days=self.lookback_days)
+        if start_date < minimum_start_date:
+            # Reset start date to days limit if it is greater than 1460 days
+            start_date = current_date - timedelta(days=self.lookback_days)
 
-            minimum_start_date = current_date - timedelta(days=self.lookback_days)
-            if start_date < minimum_start_date:
-                # Reset start date to days limit if it is greater than 1460 days
-                start_date = current_date - timedelta(days=self.lookback_days)
+        end_date = start_date + timedelta(days=14)
+        end_date = self.correct_end_date(end_date, start_date, current_date)
 
-            end_date = start_date + timedelta(days=14)
+        report_types = [self.report_name]
+        processing_status = self.config.get("processing_status")
+        # Get list of valid marketplaces
+
+        marketplace_id = None
+        if context is not None:
+            marketplace_id = context.get("marketplace_id")
+
+        report = self.get_sp_reports(marketplace_id=marketplace_id)
+        while start_date <= current_date and start_date <= global_end_date:
+            start_date_f = self.get_start_date_formatted(start_date)
+            end_date_f = self.format_end_date(end_date)
+            report_options = self.report_options
+            if self.current_selling_program:
+                report_options.update({"sellingProgram": self.current_selling_program})
+            #Process only reports created by the tap
+            self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {report_options}")
+            reports = self.create_report(
+                report,
+                start_date_f,
+                end_date_f,
+                self.report_name,
+                reportOptions=report_options,
+                report_type="json",
+                marketplace_id=marketplace_id
+            )
+            for row in reports:
+                row.update({"report_end_date": end_date.isoformat()})
+                row = self.post_process(row,context)
+                yield row
+            
+            # Move to the next time period
+            start_date = end_date + timedelta(days=1)
+            end_date += timedelta(days=14)
             end_date = self.correct_end_date(end_date, start_date, current_date)
-
-            report_types = [self.report_name]
-            processing_status = self.config.get("processing_status")
-            # Get list of valid marketplaces
-
-            marketplace_id = None
-            if context is not None:
-                marketplace_id = context.get("marketplace_id")
-
-            report = self.get_sp_reports(marketplace_id=marketplace_id)
-            while start_date <= current_date and start_date <= global_end_date:
-                start_date_f = self.get_start_date_formatted(start_date)
-                end_date_f = self.format_end_date(end_date)
-                report_options = self.report_options
-                if self.current_selling_program:
-                    report_options.update({"sellingProgram": self.current_selling_program})
-                #Process only reports created by the tap
-                self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {report_options}")
-                reports = self.create_report(
-                    report,
-                    start_date_f,
-                    end_date_f,
-                    self.report_name,
-                    reportOptions=report_options,
-                    report_type="json",
-                    marketplace_id=marketplace_id
-                )
-                for row in reports:
-                    row.update({"report_end_date": end_date.isoformat()})
-                    row = self.post_process(row,context)
-                    yield row
-                
-                # Move to the next time period
-                start_date = end_date + timedelta(days=1)
-                end_date += timedelta(days=14)
-                end_date = self.correct_end_date(end_date, start_date, current_date)
-
-        except Exception as e:
-            raise InvalidResponse(e)
 
 
 class VendorsSalesReportStream(VendorsReportStream):

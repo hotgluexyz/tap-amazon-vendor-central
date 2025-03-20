@@ -23,6 +23,10 @@ import time
 from tap_amazon_vendor_central.utils import InvalidResponse
 import json
 import backoff
+import requests
+import gzip
+import io
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
 
@@ -156,6 +160,7 @@ class AmazonSellerStream(Stream):
         (Exception),
         max_tries=10,
         factor=5,
+        giveup=lambda e: isinstance(e, InvalidMarketplace) 
     )
     def create_report(
         self,
@@ -167,38 +172,36 @@ class AmazonSellerStream(Stream):
         report_type="csv",
         marketplace_id = None
     ):
-        try:
-            if start_date and end_date is not None:
-                res = reports.create_report(
-                    reportType=type,
-                    dataStartTime=start_date,
-                    dataEndTime=end_date,
-                    reportOptions=reportOptions,
-                    marketplace_id=marketplace_id
-                ).payload
-            elif start_date:
-                res = reports.create_report(
-                    reportType=type,
-                    dataStartTime=start_date,
-                    reportOptions=reportOptions,
-                    marketplace_id=marketplace_id
-                ).payload
-            else:
-                res = reports.create_report(
-                    reportType=type, reportOptions=reportOptions, marketplace_id=marketplace_id
-                ).payload
+        if start_date and end_date is not None:
+            res = reports.create_report(
+                reportType=type,
+                dataStartTime=start_date,
+                dataEndTime=end_date,
+                reportOptions=reportOptions,
+                marketplace_id=marketplace_id
+            ).payload
+        elif start_date:
+            res = reports.create_report(
+                reportType=type,
+                dataStartTime=start_date,
+                reportOptions=reportOptions,
+                marketplace_id=marketplace_id
+            ).payload
+        else:
+            res = reports.create_report(
+                reportType=type, reportOptions=reportOptions, marketplace_id=marketplace_id
+            ).payload
 
-            if "reportId" in res:
-                self.report_id = res["reportId"]
-                return self.check_report(res["reportId"], reports, report_type)
-        except Exception as e:
-            raise InvalidResponse(e)
+        if "reportId" in res:
+            self.report_id = res["reportId"]
+            return self.check_report(res["reportId"], reports, report_type)
 
     @backoff.on_exception(
         backoff.expo,
         (Exception),
         max_tries=10,
         factor=5,
+        giveup=lambda e: isinstance(e, InvalidMarketplace) 
     )
     def get_report(self, report_id, reports):
         return reports.get_report(report_id)
@@ -246,9 +249,9 @@ class AmazonSellerStream(Stream):
         res = []
         while True:
             report = self.get_report(report_id, reports).payload
+            document_id = report.get("reportDocumentId")
             # Break the loop if the report processing is done
             if report["processingStatus"] == "DONE":
-                document_id = report["reportDocumentId"]
                 # save the document
                 self.save_document(document_id, reports, report_type)
                 if report_type == "csv":
@@ -260,6 +263,12 @@ class AmazonSellerStream(Stream):
                 self.logger.warning(
                     f"Report {report_id} failed with FATAL status. Skipping..."
                 )
+                # find cause of the issue
+                document = self.save_document(document_id, reports, report_type)
+                error = document.payload.get("document")
+                
+                if "The requested marketplaceId did not match the marketplace associated with the selling partner account" in error:
+                    raise InvalidMarketplace(error)
                 break
             else:
                 time.sleep(30)
