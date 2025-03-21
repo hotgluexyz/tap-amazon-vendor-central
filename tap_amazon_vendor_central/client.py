@@ -113,6 +113,21 @@ class AmazonSellerStream(Stream):
         if result is not None and len(result) > 0:
             result = [result[len(result) - 1]]
         return result or None
+    
+    valid_marketplace_code = None
+
+    def get_valid_marketplace_code(self):
+        if not self.valid_marketplace_code:
+            uri = self.config.get("uri")
+            marketplace_code = uri.split(".")[-1]
+            if marketplace_code == "com":
+                marketplace_code = "US"
+            if marketplace_code == "me":
+                # uri is the same for Egypt, Saudi Arabia and U.A.E.
+                marketplace_code = None
+            if marketplace_code:
+                return marketplace_code.upper()
+        return self.valid_marketplace_code
 
     def get_credentials(self):
         return dict(
@@ -126,14 +141,14 @@ class AmazonSellerStream(Stream):
 
     def get_sp_orders(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return Orders(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
 
     def get_sp_finance(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return Finances(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
@@ -143,14 +158,14 @@ class AmazonSellerStream(Stream):
         marketplace_id=None,
     ):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return ReportsV2(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
 
     def get_warehouse_object(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return Inventories(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
@@ -277,7 +292,7 @@ class AmazonSellerStream(Stream):
 
     def get_sp_catalog(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return CatalogItems(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
@@ -309,21 +324,21 @@ class AmazonSellerStream(Stream):
 
     def get_sp_vendor_fulfilment(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return VendorDirectFulfillmentOrders(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
 
     def get_sp_vendor_fulfilment_shipping(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return VendorDirectFulfillmentShipping(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
 
     def get_sp_vendor(self, marketplace_id=None):
         if marketplace_id is None:
-            marketplace_id = self.config.get("marketplace", "US")
+            marketplace_id = self.config.get("marketplace", self.get_valid_marketplace_code()) or "US"
         return VendorOrders(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )

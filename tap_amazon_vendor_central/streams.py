@@ -121,6 +121,7 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
         ),
     ).to_dict()
 
+    @load_all_pages()
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -128,7 +129,6 @@ class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
         factor=3,
     )
     @timeout(15)
-    @load_all_pages()
     def load_all_orders(self, mp, **kwargs):
         """
         a generator function to return all pages, obtained by NextToken
@@ -205,6 +205,7 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
         th.Property("labelData", th.CustomType({"type": ["array", "string"]})),
     ).to_dict()
 
+    @load_all_pages()
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -212,7 +213,6 @@ class VendorFulfilmentCustomerInvoicesStream(AmazonSellerStream):
         factor=3,
     )
     @timeout(15)
-    @load_all_pages()
     def load_all_orders(self, mp, **kwargs):
         """
         a generator function to return all pages, obtained by NextToken
@@ -290,6 +290,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         th.Property("purchaseOrderStateChangedDate", th.DateTimeType),
     ).to_dict()
 
+    @load_all_pages()
     @backoff.on_exception(
         backoff.expo,
         (Exception),
@@ -297,7 +298,6 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
         factor=3,
     )
     @timeout(15)
-    @load_all_pages()
     def load_all_orders(self, mp, **kwargs):
         """
         a generator function to return all pages, obtained by NextToken
