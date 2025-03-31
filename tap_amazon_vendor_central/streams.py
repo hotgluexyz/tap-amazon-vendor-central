@@ -63,10 +63,13 @@ class MarketplacesStream(AmazonSellerStream):
             marketplaces = self.config.get("marketplaces")
         else:
             marketplaces = get_valid_marketplaces_from_uri(self.config.get("uri"))
+            iterated_marketplaces = []
             for mp in marketplaces:
                 if self.valid_marketplace_code:
-                    yield {"id": self.valid_marketplace_code}
+                    if self.valid_marketplace_code not in iterated_marketplaces:
+                        yield {"id": self.valid_marketplace_code}
                     break
+                iterated_marketplaces.append(mp)
                 yield {"id": mp}
 
     def _sync_children(self, child_context: dict) -> None:
@@ -487,7 +490,7 @@ class VendorsReportStream(AmazonSellerStream):
             if self.current_selling_program:
                 report_options.update({"sellingProgram": self.current_selling_program})
             #Process only reports created by the tap
-            self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {report_options}")
+            self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {report_options}, marketplace_id: {marketplace_id}")
             reports = self.create_report(
                 report,
                 start_date_f,
@@ -607,45 +610,40 @@ class VendorsForecastingReportStream(VendorsReportStream):
         (Exception),
         max_tries=10,
         factor=3,
+        giveup=lambda e: isinstance(e, InvalidMarketplace)
     )
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
-        try:
+        report_types = [self.report_name]
+        processing_status = self.config.get("processing_status")
+        # Get list of valid marketplaces
 
-            report_types = [self.report_name]
-            processing_status = self.config.get("processing_status")
-            # Get list of valid marketplaces
+        marketplace_id = None
+        if context is not None:
+            marketplace_id = context.get("marketplace_id")
 
-            marketplace_id = None
-            if context is not None:
-                marketplace_id = context.get("marketplace_id")
+        report = self.get_sp_reports(marketplace_id=marketplace_id)
+        items = self.get_reports_list(report, report_types, processing_status)
 
-            report = self.get_sp_reports(marketplace_id=marketplace_id)
-            items = self.get_reports_list(report, report_types, processing_status)
+        if not items["reports"]:
+            self.logger.info(f"Creating new report. ReportName:{self.report_name}, ReportOptions: {self.report_options}, marketplace_id: {marketplace_id}")
+            reports = self.create_report(
+                reports=report,
+                type=self.report_name,
+                reportOptions=self.report_options,
+                report_type="json",
+                marketplace_id=marketplace_id
+            )
+            for row in reports:
+                yield row
 
-            if not items["reports"]:
-                self.logger.info(f"Creating new report. ReportName:{self.report_name}, ReportOptions: {self.report_options}")
-                reports = self.create_report(
-                    reports=report,
-                    type=self.report_name,
-                    reportOptions=self.report_options,
-                    report_type="json",
-                    marketplace_id=marketplace_id
-                )
-                for row in reports:
-                    yield row
-
-            # If reports are form loop through, download documents and populate the data.txt
-            for row in items["reports"]:
-                self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
-                reports = self.check_report(row["reportId"], report, "json")
-                for report_row in reports:
-                    self.logger.info(f"Processing pre-existing report row: {report_row}")
-                    yield report_row
-
-        except Exception as e:
-            raise InvalidResponse(e)
-
+        # If reports are form loop through, download documents and populate the data.txt
+        for row in items["reports"]:
+            self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
+            reports = self.check_report(row["reportId"], report, "json")
+            for report_row in reports:
+                self.logger.info(f"Processing pre-existing report row: {report_row}")
+                yield report_row
 
 class VendorsSalesRealtimeReportStream(VendorsReportStream):
     """Define custom stream."""
