@@ -1000,3 +1000,86 @@ class InventoryProductsSourcingListStream(InventoryProductsListStream):
     previous_items = []
     parent_stream_type = VendorsInventorySourcingReportStream
     report_options = {}     
+
+
+class VendorPurchaseOrdersStatusStream(AmazonSellerStream):
+    """Define custom stream."""
+
+    name = "vendor_purchase_orders_status"
+    primary_keys = ["purchaseOrderNumber"]
+    replication_key = "lastUpdatedDate"
+    next_token = None
+
+    schema = th.PropertiesList(
+        th.Property("purchaseOrderNumber", th.StringType),
+        th.Property("purchaseOrderStatus", th.StringType),
+        th.Property("purchaseOrderDate", th.DateTimeType),
+        th.Property("lastUpdatedDate", th.DateTimeType),
+        th.Property("sellingParty", th.CustomType({"type": ["object", "string"]})),
+        th.Property("shipToParty", th.CustomType({"type": ["object", "string"]})),
+        th.Property("itemStatus", th.CustomType({"type": ["array", "string"]})),
+    ).to_dict()
+
+    @load_all_pages()
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=3,
+    )
+    @timeout(15)
+    def load_all_orders(self, mp, **kwargs):
+        """
+        a generator function to return all pages, obtained by NextToken
+        """
+        try:
+            orders = self.get_sp_vendor(mp)
+            if self.next_token is not None:
+                kwargs.update({"nextToken": self.next_token})
+            orders_obj = orders.get_purchase_orders_status(**kwargs)
+            return orders_obj
+        except Exception as e:
+            raise InvalidResponse(e)
+
+    def load_order_page(self, mp, **kwargs):
+        """
+        a generator function to return all pages, obtained by NextToken
+        """
+        for page in self.load_all_orders(mp, **kwargs):
+            orders = []
+            self.next_token = page.next_token
+            for order in page.payload.get("ordersStatus", []):
+                orders.append(order)
+
+            yield orders
+            
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=3,
+    )
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        try:
+            # Get start_date
+            start_date = self.get_starting_timestamp(context) or datetime(2000, 1, 1)
+            start_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
+
+            sandbox = self.config.get("sandbox", False)
+            if sandbox is True:
+                return self.load_order_page(
+                    mp="ATVPDKIKX0DER", UpdatedAfter="TEST_CASE_200"
+                )
+            else:
+                marketplace_id = context.get("marketplace_id") if context else None
+                rows = self.load_order_page(
+                    mp=marketplace_id,
+                    updatedAfter=start_date,
+                    limit=100,
+                    SortOrder="DESC",
+                )
+            for row in rows:
+                for item in row:
+                    yield item
+        except Exception as e:
+            raise InvalidResponse(e)
