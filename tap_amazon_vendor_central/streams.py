@@ -8,8 +8,9 @@ from singer_sdk import typing as th
 from sp_api.util import load_all_pages
 
 from tap_amazon_vendor_central.client import AmazonSellerStream
-from tap_amazon_vendor_central.utils import InvalidResponse, timeout
+from tap_amazon_vendor_central.utils import InvalidResponse, timeout, get_valid_marketplaces_from_uri
 from sp_api.base.exceptions import SellingApiServerException,SellingApiNotFoundException
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace
 from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 from abc import abstractproperty
@@ -17,6 +18,7 @@ import pytz
 import json
 import os
 from dateutil.parser import parse
+import re
 
 # Replication methods
 REPLICATION_FULL_TABLE = "FULL_TABLE"
@@ -36,16 +38,11 @@ class MarketplacesStream(AmazonSellerStream):
     name = "vendor_marketplaces"
     primary_keys = ["id"]
     replication_key = None
+    valid_marketplace_code = None
     schema = th.PropertiesList(
         th.Property("id", th.StringType),
         th.Property("name", th.StringType),
     ).to_dict()
-
-    def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
-        """Return a context dictionary for child streams."""
-        return {
-            "marketplace_id": record["id"],
-        }
 
     @backoff.on_exception(
         backoff.expo,
@@ -58,31 +55,37 @@ class MarketplacesStream(AmazonSellerStream):
         if self.config.get("marketplaces"):
             marketplaces = self.config.get("marketplaces")
         else:
-            marketplaces = [
-                "US",
-                "CA",
-                "MX",
-                "BR",
-                "ES",
-                "GB",
-                "FR",
-                "NL",
-                "DE",
-                "IT",
-                "SE",
-                "PL",
-                "EG",
-                "TR",
-                "SA",
-                "AE",
-                "IN",
-                "SG",
-                "AU",
-                "JP",
-            ]
+            marketplaces = get_valid_marketplaces_from_uri(self.config.get("uri"))
+            iterated_marketplaces = []
+            for mp in marketplaces:
+                if self.valid_marketplace_code:
+                    if self.valid_marketplace_code not in iterated_marketplaces:
+                        yield {"id": self.valid_marketplace_code}
+                    break
+                iterated_marketplaces.append(mp)
+                yield {"id": mp}
 
-        for mp in marketplaces:
-            yield {"id": mp}
+    def _sync_children(self, child_context: dict) -> None:
+        try:
+            return super()._sync_children(child_context)
+        except InvalidMarketplace as e: 
+            match = re.search(r"marketplace associated with the selling partner account: ([A-Z0-9]+)", str(e))
+            marketplace_id = match.group(1) if match else None
+            self.valid_marketplace_code = self.get_marketplace_code(marketplace_id)
+
+    def get_marketplace_code(self, marketplace_id):
+        """Find the 2-letter marketplace code for a given marketplace ID."""
+        for marketplace in Marketplaces:
+            if marketplace.value[1] == marketplace_id:  # Checking marketplace_id
+                return marketplace.name  # Returning the 2-letter code
+        return None
+
+
+    def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
+        """Return a context dictionary for child streams."""
+        return {
+            "marketplace_id": record["id"],
+        }
 
 
 class VendorFulfilmentPurchaseOrdersStream(AmazonSellerStream):
