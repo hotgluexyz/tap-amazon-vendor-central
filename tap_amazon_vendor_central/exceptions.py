@@ -1,0 +1,2 @@
+class InvalidMarketplace(Exception):
+    pass
