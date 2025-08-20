@@ -559,7 +559,6 @@ class VendorsSalesReportStream(VendorsReportStream):
             self.current_selling_program = program
             yield from super().get_records(context)
 
-
 class VendorsTrafficReportStream(VendorsReportStream):
     """Define custom stream."""
 
@@ -580,28 +579,6 @@ class VendorsTrafficReportStream(VendorsReportStream):
         th.Property("report_end_date", th.DateTimeType),
         th.Property("marketplace_id", th.StringType),
     ).to_dict()
-
-class VendorNetPureProductMarginReportStream(VendorsReportStream):
-    """Define custom stream."""
-    
-    name = "vendor_net_pure_product_margin_report"
-    primary_keys = None
-    replication_key = "report_end_date"
-    report_id = None
-    report_name = "GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT"
-    report_options = {"reportPeriod": "DAY"}
-    schema = th.PropertiesList(
-        th.Property(
-            "reportSpecification", th.CustomType({"type": ["object", "string"]})
-        ),
-        th.Property("netPureProductMarginAggregate", th.CustomType({"type": ["array", "string"]})),
-        th.Property("netPureProductMarginByAsin", th.CustomType({"type": ["array", "string"]})),
-        th.Property("report_end_date", th.DateTimeType),
-        th.Property("marketplace_id", th.StringType),
-    ).to_dict()
-
-
-
 
 class VendorsForecastingReportStream(VendorsReportStream):
     """Report stream for Forecasting report
