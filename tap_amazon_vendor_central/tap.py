@@ -25,8 +25,8 @@ from tap_amazon_vendor_central.streams import (
     VendorsInventorySourcingReportStream,
     InventoryProductsSourcingListStream,
     VendorPurchaseOrdersStatusStream,
-    VendorNetPureProductMarginReportStream,
 )
+from tap_amazon_vendor_central.custom_period_report_stream import REPORT_CONFIGS, CustomPeriodReportStream, create_report_config
 
 STREAM_TYPES = [
     MarketplacesStream,
@@ -47,7 +47,13 @@ STREAM_TYPES = [
     VendorsInventorySourcingReportStream,
     InventoryProductsSourcingListStream,
     VendorPurchaseOrdersStatusStream,
-    VendorNetPureProductMarginReportStream,
+]
+
+default_reports_with_periods = [
+    {
+        "report": "NetPPM",
+        "period": "DAY",
+    }
 ]
 
 
@@ -79,11 +85,48 @@ class TapAmazonVendorCentral(Tap):
             "marketplaces",
             th.CustomType({"type": ["array", "string"]}),
         ),
+        th.Property(
+            "custom_reports",
+            th.ArrayType(
+                th.ObjectType(
+                    th.Property("report", th.StringType, required=True),
+                    th.Property("period", th.StringType, required=True),
+                )
+            ),
+            description="List of custom reports to generate. Example: [{'report': 'NetPPM', 'period': 'WEEK'}]"
+        ),
     ).to_dict()
 
     def discover_streams(self) -> List[Stream]:
         """Return a list of discovered streams."""
-        return [stream_class(tap=self) for stream_class in STREAM_TYPES]
+        streams = [stream_class(tap=self) for stream_class in STREAM_TYPES]        
+        # Add custom report streams if configured
+        custom_reports = self.config.get("custom_reports", default_reports_with_periods)
+        for custom_report in custom_reports:
+            report_type = custom_report.get("report")
+            period = custom_report.get("period")
+            if report_type not in REPORT_CONFIGS:
+                raise ValueError(f"Invalid report type: {report_type}. Must be one of: {', '.join(REPORT_CONFIGS.keys())}")
+            
+            if report_type and period:
+                # Create the report config
+                report_config = create_report_config(report_type, period)
+                
+                # Create the custom stream
+                custom_stream = CustomPeriodReportStream(self, report_config)
+                custom_stream.replication_key = REPORT_CONFIGS[report_type].get("replication_key", "report_end_date")
+                streams.append(custom_stream)
+                
+                self.logger.info(
+                    f"Added custom report stream: {custom_stream.name} "
+                    f"(report={report_type}, period={period})"
+                )
+            else:
+                self.logger.warning(
+                    f"Invalid custom report config: {custom_report}. "
+                    "Must have 'report' and 'period' fields."
+                )
+        return streams
 
 
 if __name__ == "__main__":
