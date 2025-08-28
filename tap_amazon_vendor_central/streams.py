@@ -865,7 +865,7 @@ class InventoryProductsListStream(VendorsReportStream):
         return {"ASIN": record["asin"], "marketplace_id": context.get("marketplace_id")}
 
     def get_records(self, context: Optional[dict]) -> Iterable[Dict[str, Any]]:
-        records = None
+        records = []
         content = VendorsReportStream.products_context
 
         if content.get("products"):
