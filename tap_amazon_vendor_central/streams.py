@@ -18,7 +18,7 @@ import json
 import os
 from dateutil.parser import parse
 from tap_amazon_vendor_central.utils import get_valid_marketplaces_from_uri
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace
 import re
 
 # Replication methods
@@ -482,8 +482,6 @@ class VendorsReportStream(AmazonSellerStream):
         if context is not None:
             marketplace_id = context.get("marketplace_id")
 
-        report_available = True
-
         report = self.get_sp_reports(marketplace_id=marketplace_id)
         while start_date <= current_date and start_date <= global_end_date:
             start_date_f = self.get_start_date_formatted(start_date)
@@ -493,38 +491,24 @@ class VendorsReportStream(AmazonSellerStream):
                 report_options.update({"sellingProgram": self.current_selling_program})
             #Process only reports created by the tap
             self.logger.info(f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, ReportName:{self.report_name}, ReportOptions: {report_options}, marketplace_id: {marketplace_id}")
-            try:
-                reports = self.create_report(
-                    report,
-                    start_date_f,
-                    end_date_f,
-                    self.report_name,
-                    reportOptions=report_options,
-                    report_type="json",
-                    marketplace_id=marketplace_id
-                )
-            except ReportNotAvailable:
-                report_available = False
-                self.logger.info(f"No reports created for period {start_date_f} to {end_date_f}. Decreasing end date by 1 day.")
-                end_date -= timedelta(days=1)
-                if start_date > end_date:
-                    self.logger.info(f"Start date {start_date} is greater than end date {end_date}. Breaking out of loop.")
-                    break
-                end_date = self.correct_end_date(end_date, start_date, current_date)
-                continue
-
+            reports = self.create_report(
+                report,
+                start_date_f,
+                end_date_f,
+                self.report_name,
+                reportOptions=report_options,
+                report_type="json",
+                marketplace_id=marketplace_id
+            )
             for row in reports:
                 row.update({"report_end_date": end_date.isoformat()})
                 row = self.post_process(row,context)
                 yield row
-
-            if report_available:
-                # Move to the next time period
-                start_date = end_date + timedelta(days=1)
-                end_date += timedelta(days=14)
-                end_date = self.correct_end_date(end_date, start_date, current_date)
-            else:
-                break
+            
+            # Move to the next time period
+            start_date = end_date + timedelta(days=1)
+            end_date += timedelta(days=14)
+            end_date = self.correct_end_date(end_date, start_date, current_date)
 
 
 class VendorsSalesReportStream(VendorsReportStream):

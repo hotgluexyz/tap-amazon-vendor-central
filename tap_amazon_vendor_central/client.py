@@ -26,7 +26,7 @@ import backoff
 import requests
 import gzip
 import io
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
 
@@ -175,7 +175,7 @@ class AmazonSellerStream(Stream):
         (Exception),
         max_tries=10,
         factor=5,
-        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable))
+        giveup=lambda e: isinstance(e, InvalidMarketplace) 
     )
     def create_report(
         self,
@@ -284,8 +284,6 @@ class AmazonSellerStream(Stream):
                 
                 if "The requested marketplaceId did not match the marketplace associated with the selling partner account" in error:
                     raise InvalidMarketplace(error)
-                if "The report data for the requested date range is not yet available" in error:
-                    raise ReportNotAvailable(error)
                 break
             else:
                 time.sleep(30)
