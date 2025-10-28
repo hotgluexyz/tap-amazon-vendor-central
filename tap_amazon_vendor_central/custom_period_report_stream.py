@@ -6,7 +6,7 @@ import backoff
 from dateutil.parser import parse
 from singer_sdk import typing as th
 from tap_amazon_vendor_central.client import AmazonSellerStream
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable
 from tap_amazon_vendor_central.streams import MarketplacesStream
 
 class CustomPeriodReportStream(AmazonSellerStream):
@@ -95,6 +95,8 @@ class CustomPeriodReportStream(AmazonSellerStream):
             marketplace_id = context.get("marketplace_id")
 
         report = self.get_sp_reports(marketplace_id=marketplace_id)
+
+        report_available = True
         
         while start_date <= current_date and start_date <= global_end_date:
             start_date_f = self.get_start_date_formatted(start_date)
@@ -109,17 +111,26 @@ class CustomPeriodReportStream(AmazonSellerStream):
                 f"StartDate: {start_date_f}, EndDate: {end_date_f}, "
                 f"ReportOptions: {report_options}, marketplace_id: {marketplace_id}"
             )
-                        
-            reports = self.create_report(
-                report,
-                start_date_f,
-                end_date_f,
-                self.report_name,
-                reportOptions=report_options,
-                report_type="json",
-                marketplace_id=marketplace_id
-            )
-            
+            try:
+                reports = self.create_report(
+                    report,
+                    start_date_f,
+                    end_date_f,
+                    self.report_name,
+                    reportOptions=report_options,
+                    report_type="json",
+                    marketplace_id=marketplace_id
+                )
+            except ReportNotAvailable:
+                report_available = False
+                self.logger.info(f"No reports created for period {start_date_f} to {end_date_f}. Decreasing end date by 1 day.")
+                end_date -= timedelta(days=1)
+                if start_date > end_date:
+                    self.logger.info(f"Start date {start_date} is greater than end date {end_date}. Breaking out of loop.")
+                    break
+                end_date = self.correct_end_date(end_date, start_date, current_date)
+                continue
+
             if reports:
                 for row in reports:
                     row.update({"report_end_date": end_date.isoformat()})
@@ -128,10 +139,13 @@ class CustomPeriodReportStream(AmazonSellerStream):
             else:
                 self.logger.info(f"No report available for period {start_date_f} to {end_date_f}")
                     
-            # Move to the next time period based on the report period
-            start_date = self.get_next_period_start(start_date, self.report_period)
-            period_end_date = self.get_period_end_date(start_date, self.report_period)
-            end_date = self.correct_end_date(period_end_date, start_date, current_date)
+            if report_available:
+                # Move to the next time period based on the report period
+                start_date = self.get_next_period_start(start_date, self.report_period)
+                period_end_date = self.get_period_end_date(start_date, self.report_period)
+                end_date = self.correct_end_date(period_end_date, start_date, current_date)
+            else:
+                break
             
             # if end date is today and report_period is Day then break the loop
             if self.report_period == "DAY" and end_date == current_date:
