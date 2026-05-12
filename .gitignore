@@ -1,9 +1,9 @@
 # Secrets and internal config files
 **/.secrets/*
 poetry.lock
+.vscode/
 
 # Ignore meltano internal cache and sqlite systemdb
-
 .meltano/
 
 # Byte-compiled / optimized / DLL files
