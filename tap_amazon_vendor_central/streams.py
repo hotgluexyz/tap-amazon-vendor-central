@@ -377,6 +377,7 @@ class VendorPurchaseOrdersStream(AmazonSellerStream):
 class VendorsReportStream(AmazonSellerStream):
     """Define custom stream."""
 
+    parent_stream_type = MarketplacesStream
     lookback_days = 1460
     correct_end_date_minus_days = 2
     products_context = []
