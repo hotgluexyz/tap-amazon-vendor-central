@@ -61,6 +61,8 @@ class MarketplacesStream(AmazonSellerStream):
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         if self.config.get("marketplaces"):
             marketplaces = self.config.get("marketplaces")
+            for mp in marketplaces:
+                yield {"id": mp}
         else:
             marketplaces = get_valid_marketplaces_from_uri(self.config.get("uri"))
             iterated_marketplaces = []
