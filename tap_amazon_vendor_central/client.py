@@ -23,6 +23,7 @@ import time
 from tap_amazon_vendor_central.utils import InvalidResponse
 import json
 import backoff
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
 
@@ -156,6 +157,7 @@ class AmazonSellerStream(Stream):
         (Exception),
         max_tries=10,
         factor=5,
+        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable)) 
     )
     def create_report(
         self,
@@ -166,30 +168,27 @@ class AmazonSellerStream(Stream):
         reportOptions=None,
         report_type="csv",
     ):
-        try:
-            if start_date and end_date is not None:
-                res = reports.create_report(
-                    reportType=type,
-                    dataStartTime=start_date,
-                    dataEndTime=end_date,
-                    reportOptions=reportOptions,
-                ).payload
-            elif start_date:
-                res = reports.create_report(
-                    reportType=type,
-                    dataStartTime=start_date,
-                    reportOptions=reportOptions,
-                ).payload
-            else:
-                res = reports.create_report(
-                    reportType=type, reportOptions=reportOptions
-                ).payload
+        if start_date and end_date is not None:
+            res = reports.create_report(
+                reportType=type,
+                dataStartTime=start_date,
+                dataEndTime=end_date,
+                reportOptions=reportOptions,
+            ).payload
+        elif start_date:
+            res = reports.create_report(
+                reportType=type,
+                dataStartTime=start_date,
+                reportOptions=reportOptions,
+            ).payload
+        else:
+            res = reports.create_report(
+                reportType=type, reportOptions=reportOptions
+            ).payload
 
-            if "reportId" in res:
-                self.report_id = res["reportId"]
-                return self.check_report(res["reportId"], reports, report_type)
-        except Exception as e:
-            raise InvalidResponse(e)
+        if "reportId" in res:
+            self.report_id = res["reportId"]
+            return self.check_report(res["reportId"], reports, report_type)
 
     @backoff.on_exception(
         backoff.expo,
@@ -205,6 +204,7 @@ class AmazonSellerStream(Stream):
         (Exception),
         max_tries=10,
         factor=5,
+        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable)) 
     )
     def save_document(self, document_id, reports, report_type="csv"):
         res = reports.get_report_document(
@@ -257,7 +257,16 @@ class AmazonSellerStream(Stream):
                 self.logger.warning(
                     f"Report {report_id} failed with FATAL status. Skipping..."
                 )
+                document_id = report["reportDocumentId"]
+                document = self.save_document(document_id, reports, report_type)
+                error = document.payload.get("document")
+                
+                if "The requested marketplaceId did not match the marketplace associated with the selling partner account" in error:
+                    raise InvalidMarketplace(error)
+                if "The report data for the requested date range is not yet available" in error:
+                    raise ReportNotAvailable(error)
                 break
+
             else:
                 time.sleep(30)
                 continue
