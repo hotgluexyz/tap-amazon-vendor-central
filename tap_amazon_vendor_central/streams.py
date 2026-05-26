@@ -10,7 +10,7 @@ from sp_api.util import load_all_pages
 from tap_amazon_vendor_central.client import AmazonSellerStream
 from tap_amazon_vendor_central.utils import InvalidResponse, timeout, get_valid_marketplaces_from_uri
 from sp_api.base.exceptions import SellingApiServerException,SellingApiNotFoundException
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError
 from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 from abc import abstractproperty
@@ -451,7 +451,7 @@ class VendorsReportStream(AmazonSellerStream):
         (Exception),
         max_tries=10,
         factor=3,
-        giveup=lambda e: isinstance(e, InvalidMarketplace) 
+        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable, PermissionError)) 
     )
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
@@ -623,45 +623,45 @@ class VendorsForecastingReportBaseStream(VendorsReportStream):
     )
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
-        try:
+        report_types = [self.report_name]
+        processing_status = self.config.get("processing_status")
+        # Get list of valid marketplaces
 
-            report_types = [self.report_name]
-            processing_status = self.config.get("processing_status")
-            # Get list of valid marketplaces
+        marketplace_id = None
+        if context is not None:
+            marketplace_id = context.get("marketplace_id")
 
-            marketplace_id = None
-            if context is not None:
-                marketplace_id = context.get("marketplace_id")
+        report = self.get_sp_reports(marketplace_id=marketplace_id)
+        items = self.get_reports_list(report, report_types, processing_status)
 
-            report = self.get_sp_reports(marketplace_id=marketplace_id)
-            items = self.get_reports_list(report, report_types, processing_status)
-
-            if not items["reports"]:
-                report_options = self.report_options
-                if self.current_selling_program:
-                    report_options.update({"sellingProgram": self.current_selling_program})
-                self.logger.info(
-                    f"Creating new report. ReportName:{self.report_name}, ReportOptions: {report_options}"
-                )
+        if not items["reports"]:
+            report_options = self.report_options
+            if self.current_selling_program:
+                report_options.update({"sellingProgram": self.current_selling_program})
+            self.logger.info(
+                f"Creating new report. ReportName:{self.report_name}, ReportOptions: {report_options}"
+            )
+            try:
                 reports = self.create_report(
                     reports=report,
                     type=self.report_name,
                     reportOptions=self.report_options,
                     report_type="json",
                 )
-                for row in reports:
-                    yield row
+            except (ReportNotAvailable) as e:
+                self.logger.warning(f"Report not available for date range. Skipping...")
+                reports = []
 
-            # If reports are form loop through, download documents and populate the data.txt
-            for row in items["reports"]:
-                self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
-                reports = self.check_report(row["reportId"], report, "json")
-                for report_row in reports:
-                    self.logger.info(f"Processing pre-existing report row: {report_row}")
-                    yield report_row
+            for row in reports:
+                yield row
 
-        except Exception as e:
-            raise InvalidResponse(e)
+        # If reports are form loop through, download documents and populate the data.txt
+        for row in items["reports"]:
+            self.logger.info(f"Pre-existing report of type: {self.report_name} found. Processing...")
+            reports = self.check_report(row["reportId"], report, "json")
+            for report_row in reports:
+                self.logger.info(f"Processing pre-existing report row: {report_row}")
+                yield report_row
 
 class VendorsForecastingReportStream(VendorsForecastingReportBaseStream):
     name = "vendor_forecasting_report"

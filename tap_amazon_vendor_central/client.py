@@ -23,7 +23,8 @@ import time
 from tap_amazon_vendor_central.utils import InvalidResponse
 import json
 import backoff
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError
+import re
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
 
@@ -260,12 +261,22 @@ class AmazonSellerStream(Stream):
                 document_id = report["reportDocumentId"]
                 document = self.save_document(document_id, reports, report_type)
                 error = document.payload.get("document")
+                error = json.loads(error).get("errorDetails") or error
                 
                 if "The requested marketplaceId did not match the marketplace associated with the selling partner account" in error:
                     raise InvalidMarketplace(error)
                 if "The report data for the requested date range is not yet available" in error:
                     raise ReportNotAvailable(error)
-                break
+                
+                # Check for permission errors
+                permissions_error_pattern = (
+                    r"Please verify if you have correct .* "
+                    r"and/or required permissions to request this report"
+                )
+                if re.search(permissions_error_pattern, error):
+                    raise PermissionError(error)
+
+                raise InvalidResponse(error)
 
             else:
                 time.sleep(30)
