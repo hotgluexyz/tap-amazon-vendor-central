@@ -23,7 +23,7 @@ import time
 from tap_amazon_vendor_central.utils import InvalidResponse
 import json
 import backoff
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError, InvalidReportParameter, report_giveup
 import re
 
 ROOT_DIR = os.environ.get("ROOT_DIR", ".")
@@ -158,7 +158,7 @@ class AmazonSellerStream(Stream):
         (Exception),
         max_tries=10,
         factor=5,
-        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable)) 
+        giveup=report_giveup
     )
     def create_report(
         self,
@@ -205,7 +205,7 @@ class AmazonSellerStream(Stream):
         (Exception),
         max_tries=10,
         factor=5,
-        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable)) 
+        giveup=report_giveup
     )
     def save_document(self, document_id, reports, report_type="csv"):
         res = reports.get_report_document(
@@ -263,11 +263,23 @@ class AmazonSellerStream(Stream):
                 error = document.payload.get("document")
                 error = json.loads(error).get("errorDetails") or error
                 
-                if "The requested marketplaceId did not match the marketplace associated with the selling partner account" in error:
+                if (
+                    "The requested marketplaceId did not match the marketplace associated with the selling partner account" in error
+                    or "did not match the provided marketplaceId" in error
+                ):
                     raise InvalidMarketplace(error)
+                if "No vendor code set as manufacturing role for vendor group" in error:
+                    raise PermissionError(error)
                 if "The report data for the requested date range is not yet available" in error:
                     raise ReportNotAvailable(error)
-                
+                # Account-specific parameter restrictions: sellingProgram (RETAIL/FRESH/BUSINESS)
+                # and distributorView (MANUFACTURING/SOURCING) may not be available for all accounts.
+                if (
+                    "sellingProgram parameter contains an invalid value" in error
+                    or "distributorView parameter contains an invalid value" in error
+                ):
+                    raise InvalidReportParameter(error)
+
                 # Check for permission errors
                 permissions_error_pattern = (
                     r"Please verify if you have correct .* "
