@@ -10,7 +10,7 @@ from sp_api.util import load_all_pages
 from tap_amazon_vendor_central.client import AmazonSellerStream
 from tap_amazon_vendor_central.utils import InvalidResponse, timeout, get_valid_marketplaces_from_uri
 from sp_api.base.exceptions import SellingApiServerException,SellingApiNotFoundException
-from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError
+from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError, InvalidReportParameter, report_giveup
 from dateutil.relativedelta import relativedelta
 from sp_api.base import Marketplaces
 from abc import abstractproperty
@@ -68,12 +68,29 @@ class MarketplacesStream(AmazonSellerStream):
                 yield {"id": mp}
 
     def _sync_children(self, child_context: dict) -> None:
-        try:
-            return super()._sync_children(child_context)
-        except InvalidMarketplace as e: 
-            match = re.search(r"marketplace associated with the selling partner account: ([A-Z0-9]+)", str(e))
-            marketplace_id = match.group(1) if match else None
-            self.valid_marketplace_code = self.get_marketplace_code(marketplace_id)
+        for child_stream in self.child_streams:
+            if not (child_stream.selected or child_stream.has_selected_descendents):
+                continue
+            try:
+                child_stream.sync(context=child_context)
+            except InvalidMarketplace as e:
+                # Marketplace mismatch affects all child streams equally — stop remaining
+                # children for this partition and record the correct marketplace if available.
+                match = re.search(r"marketplace associated with the selling partner account: ([A-Z0-9]+)", str(e))
+                if match:
+                    marketplace_id = match.group(1)
+                    self.valid_marketplace_code = self.get_marketplace_code(marketplace_id)
+                else:
+                    self.logger.warning(
+                        f"InvalidMarketplace for context {child_context}: {e}. "
+                        "Could not extract valid marketplace ID — skipping this partition."
+                    )
+                return
+            except (PermissionError, InvalidReportParameter, InvalidResponse) as e:
+                # Stream-specific errors — log and continue to the next child stream.
+                self.logger.warning(
+                    f"Skipping stream '{child_stream.name}' for partition {child_context}: {e}"
+                )
 
     def get_marketplace_code(self, marketplace_id):
         """Find the 2-letter marketplace code for a given marketplace ID."""
@@ -451,7 +468,7 @@ class VendorsReportStream(AmazonSellerStream):
         (Exception),
         max_tries=10,
         factor=3,
-        giveup=lambda e: isinstance(e, (InvalidMarketplace, ReportNotAvailable, PermissionError)) 
+        giveup=report_giveup
     )
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
@@ -532,7 +549,10 @@ class VendorsSellingProgramsStream(VendorsReportStream):
         for program in self.selling_programs:
             # Reset current selling program so it could be used by the parent function when creating the report.
             self.current_selling_program = program
-            yield from super().get_records(context)
+            try:
+                yield from super().get_records(context)
+            except InvalidReportParameter as e:
+                self.logger.warning(f"Skipping sellingProgram '{program}': {e}")
 
 
 class VendorsSalesReportStream(VendorsSellingProgramsStream):
@@ -620,6 +640,7 @@ class VendorsForecastingReportBaseStream(VendorsReportStream):
         (Exception),
         max_tries=10,
         factor=3,
+        giveup=report_giveup
     )
     # @timeout(15)
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
@@ -648,8 +669,8 @@ class VendorsForecastingReportBaseStream(VendorsReportStream):
                     reportOptions=self.report_options,
                     report_type="json",
                 )
-            except (ReportNotAvailable) as e:
-                self.logger.warning(f"Report not available for date range. Skipping...")
+            except (ReportNotAvailable, InvalidReportParameter) as e:
+                self.logger.warning(f"Report not available or sellingProgram not valid. Skipping...")
                 reports = []
 
             for row in reports:
@@ -673,7 +694,10 @@ class VendorsForecastingReportStream(VendorsForecastingReportBaseStream):
         for program in self.selling_programs:
             # Reset current selling program so it could be used by the parent function when creating the report.
             self.current_selling_program = program
-            yield from super().get_records(context)
+            try:
+                yield from super().get_records(context)
+            except InvalidReportParameter as e:
+                self.logger.warning(f"Skipping sellingProgram '{program}': {e}")
 
 
 class VendorsSalesRealtimeReportStream(VendorsReportStream):
