@@ -48,6 +48,19 @@ def test_repeat_purchase_stream_metadata():
     assert stream.replication_key == "report_end_date"
 
 
+def test_max_report_end_respects_configured_mid_week_end_date():
+    current_date = datetime.datetime(2026, 8, 18)  # Tuesday
+    configured_end_date = datetime.datetime(2026, 8, 13)  # Thursday
+    lag_adjusted_end = align_to_week_end(
+        current_date - datetime.timedelta(days=2)
+    )
+    configured_max_end = align_to_week_end(configured_end_date)
+    max_report_end = min(lag_adjusted_end, configured_max_end)
+    assert configured_max_end.date() == datetime.date(2026, 8, 8)
+    assert max_report_end == configured_max_end
+    assert max_report_end < lag_adjusted_end
+
+
 def test_repeat_purchase_post_process_sets_report_end_date():
     tap = TapAmazonVendorCentral(config=SAMPLE_CONFIG)
     stream = tap.streams["vendor_repeat_purchase_report"]

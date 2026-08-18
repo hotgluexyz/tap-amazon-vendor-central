@@ -661,8 +661,11 @@ class VendorsRepeatPurchaseReportStream(VendorsReportStream):
             start_date = minimum_start_date
 
         start_date = align_to_week_start(start_date)
-        max_report_end = align_to_week_end(
-            current_date - timedelta(days=self.correct_end_date_minus_days)
+        max_report_end = min(
+            align_to_week_end(
+                current_date - timedelta(days=self.correct_end_date_minus_days)
+            ),
+            align_to_week_end(global_end_date),
         )
 
         marketplace_id = None
