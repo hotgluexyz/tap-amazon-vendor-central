@@ -277,6 +277,7 @@ class AmazonSellerStream(Stream):
                 if (
                     "sellingProgram parameter contains an invalid value" in error
                     or "distributorView parameter contains an invalid value" in error
+                    or "double check that your parameters are valid" in error
                 ):
                     raise InvalidReportParameter(error)
 

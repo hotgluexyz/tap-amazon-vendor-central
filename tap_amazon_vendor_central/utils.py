@@ -1,5 +1,6 @@
 import signal
 import time
+from datetime import datetime, timedelta
 from sp_api.base.marketplaces import Marketplaces
 from typing import List
 
@@ -147,3 +148,15 @@ def get_valid_marketplaces_from_uri(uri: str) -> List[str]:
         if marketplace.value[2] == region:
             valid_marketplaces.append(marketplace.name)
     return valid_marketplaces
+
+
+def align_to_week_start(dt: datetime) -> datetime:
+    """Return the Sunday on or before dt (Amazon WEEK reportPeriod start)."""
+    days_since_sunday = (dt.weekday() + 1) % 7
+    return dt - timedelta(days=days_since_sunday)
+
+
+def align_to_week_end(dt: datetime) -> datetime:
+    """Return the Saturday on or before dt (Amazon WEEK reportPeriod end)."""
+    days_since_saturday = (dt.weekday() - 5) % 7
+    return dt - timedelta(days=days_since_saturday)

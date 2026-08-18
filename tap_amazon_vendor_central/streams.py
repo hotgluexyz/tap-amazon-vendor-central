@@ -8,7 +8,13 @@ from singer_sdk import typing as th
 from sp_api.util import load_all_pages
 
 from tap_amazon_vendor_central.client import AmazonSellerStream
-from tap_amazon_vendor_central.utils import InvalidResponse, timeout, get_valid_marketplaces_from_uri
+from tap_amazon_vendor_central.utils import (
+    InvalidResponse,
+    timeout,
+    get_valid_marketplaces_from_uri,
+    align_to_week_start,
+    align_to_week_end,
+)
 from sp_api.base.exceptions import SellingApiServerException,SellingApiNotFoundException
 from tap_amazon_vendor_central.exceptions import InvalidMarketplace, ReportNotAvailable, PermissionError, InvalidReportParameter, report_giveup
 from dateutil.relativedelta import relativedelta
@@ -592,6 +598,117 @@ class VendorsSalesReportStream(VendorsSellingProgramsStream):
         if row.get("salesByAsin"):
             row['report_end_date'] = self.get_max_date(row.get("salesByAsin")) 
         return row
+
+
+class VendorsRepeatPurchaseReportStream(VendorsReportStream):
+    """Repeat Purchase Brand Analytics report.
+       URL: https://developer-docs.amazon.com/sp-api/docs/report-type-values-analytics#repeat-purchase
+    """
+
+    name = "vendor_repeat_purchase_report"
+    primary_keys = None
+    replication_key = "report_end_date"
+    report_id = None
+    document_id = None
+    report_name = "GET_BRAND_ANALYTICS_REPEAT_PURCHASE_REPORT"
+    report_options = {"reportPeriod": "WEEK"}
+    weeks_per_request = 2
+
+    schema = th.PropertiesList(
+        th.Property("reportId", th.StringType),
+        th.Property(
+            "reportSpecification", th.CustomType({"type": ["object", "string"]})
+        ),
+        th.Property("dataByAsin", th.CustomType({"type": ["array", "string"]})),
+        th.Property("marketplace_id", th.StringType),
+        th.Property("report_end_date", th.DateTimeType),
+    ).to_dict()
+
+    def get_max_date(self, data, date_key="endDate"):
+        max_date_dict = max(data, key=lambda x: x[date_key])
+        max_date_str = max_date_dict["endDate"]
+        return parse(max_date_str).date().isoformat()
+
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        if row.get("dataByAsin"):
+            row["report_end_date"] = self.get_max_date(row.get("dataByAsin"))
+        return row
+
+    @backoff.on_exception(
+        backoff.expo,
+        (Exception),
+        max_tries=10,
+        factor=3,
+        giveup=report_giveup,
+    )
+    def get_records(self, context: Optional[dict]) -> Iterable[dict]:
+        current_date = self.get_current_datetime()
+        start_date = self.get_starting_timestamp(context)
+        if start_date:
+            start_date = start_date.replace(tzinfo=None)
+        if self.config.get("start_date") and not start_date:
+            start_date = parse(self.config.get("start_date"))
+            start_date = start_date.replace(tzinfo=None)
+        if not start_date:
+            start_date = current_date - timedelta(days=self.lookback_days)
+
+        global_end_date = current_date
+        if self.config.get("end_date"):
+            global_end_date = parse(self.config.get("end_date")).replace(tzinfo=None)
+
+        minimum_start_date = current_date - timedelta(days=self.lookback_days)
+        if start_date < minimum_start_date:
+            start_date = minimum_start_date
+
+        start_date = align_to_week_start(start_date)
+        max_report_end = align_to_week_end(
+            current_date - timedelta(days=self.correct_end_date_minus_days)
+        )
+
+        marketplace_id = None
+        if context is not None:
+            marketplace_id = context.get("marketplace_id")
+
+        report = self.get_sp_reports(marketplace_id=marketplace_id)
+        chunk_days = 7 * self.weeks_per_request - 1
+
+        while start_date <= current_date and start_date <= global_end_date:
+            end_date = start_date + timedelta(days=chunk_days)
+            if end_date > max_report_end:
+                end_date = max_report_end
+            if end_date < start_date:
+                break
+
+            start_date_f = self.get_start_date_formatted(start_date)
+            end_date_f = self.format_end_date(end_date)
+            self.logger.info(
+                f"Creating new report. StartDate:{start_date_f}, EndDate: {end_date_f}, "
+                f"ReportName:{self.report_name}, ReportOptions: {self.report_options}"
+            )
+
+            try:
+                reports = self.create_report(
+                    report,
+                    start_date_f,
+                    end_date_f,
+                    self.report_name,
+                    reportOptions=self.report_options,
+                    report_type="json",
+                )
+            except (ReportNotAvailable, InvalidReportParameter):
+                self.logger.warning(
+                    f"Report not available or invalid for date range: {start_date_f} to {end_date_f}. Skipping..."
+                )
+                reports = []
+
+            for row in reports:
+                row.update({"report_end_date": end_date.isoformat()})
+                if marketplace_id:
+                    row["marketplace_id"] = marketplace_id
+                row = self.post_process(row, context)
+                yield row
+
+            start_date = end_date + timedelta(days=1)
 
 
 class VendorsTrafficReportStream(VendorsReportStream):
