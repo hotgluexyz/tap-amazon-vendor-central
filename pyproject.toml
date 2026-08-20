@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tap-amazon-vendor-central"
-version = "0.1.1"
+version = "1.0.0"
 description = "Singer tap for Amazon Vendor Central via the Selling Partner API."
 authors = ["Adil Ahmed"]
 keywords = [
