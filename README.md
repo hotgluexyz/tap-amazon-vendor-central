@@ -26,10 +26,10 @@ poetry install
 | `aws_secret_key` | No | AWS secret key for SP-API signing |
 | `role_arn` | No | IAM role ARN to assume for SP-API requests |
 | `sandbox` | No | Use the SP-API sandbox. Defaults to `false` |
-| `marketplaces` | No | List of marketplace IDs to sync. When omitted, all vendor marketplaces are used |
+| `marketplaces` | No | List of marketplace IDs to sync. When omitted, marketplaces are derived from `uri` |
+| `uri` | No | Vendor Central portal URL for the account region (for example `https://vendorcentral.amazon.com`). Used to resolve marketplaces when `marketplaces` is not set |
 | `report_types` | No | Legacy report type filter (defaults vary by stream) |
 | `processing_status` | No | Report processing statuses to poll. Defaults to `IN_QUEUE`, `IN_PROGRESS` |
-| `custom_reports` | No | Dynamic analytics reports. Each entry needs `report` and `period` (see below) |
 
 Example `config.json`:
 
@@ -39,9 +39,7 @@ Example `config.json`:
   "client_secret": "xxxx",
   "refresh_token": "Atzr|xxxx",
   "sandbox": false,
-  "custom_reports": [
-    {"report": "NetPPM", "period": "DAY"}
-  ]
+  "uri": "https://vendorcentral.amazon.com"
 }
 ```
 
@@ -51,14 +49,7 @@ Run `tap-amazon-vendor-central --about` for the full JSON schema.
 
 The tap uses Login with Amazon (LWA) plus AWS SigV4 signing against the Selling Partner API. You need a registered SP-API application, vendor authorization, and either IAM user keys or a role ARN that can call SP-API on your behalf.
 
-### Custom period reports
-
-Set `custom_reports` to add analytics streams at runtime. Each object needs:
-
-- `report`: report type key (currently `NetPPM`)
-- `period`: `DAY`, `WEEK`, `MONTH`, or `QUARTER`
-
-When omitted, the tap defaults to `[{"report": "NetPPM", "period": "DAY"}]`.
+Hotglue connections typically include `uri` from the linked Vendor Central account. The tap uses it to pick marketplaces in the same AWS region when `marketplaces` is not configured.
 
 ## Usage
 
@@ -75,12 +66,12 @@ tap-amazon-vendor-central --config config.json --catalog catalog.json
 |---|---|---|
 | `vendor_marketplaces` | Core | Parent stream for marketplace-scoped sync |
 | `vendor_purchase_orders` | Core | Vendor purchase orders |
-| `vendor_purchase_orders_status` | Core | Purchase order status |
 | `vendor_fulfilment_purchase_orders` | Core | Direct fulfilment purchase orders |
 | `vendor_fulfilment_customer_invoices` | Core | Direct fulfilment customer invoices |
-| `vendor_sales_report` | Report | `GET_VENDOR_SALES_REPORT` |
+| `vendor_sales_report` | Report | `GET_VENDOR_SALES_REPORT` (manufacturing, per selling program) |
 | `vendor_traffic_report` | Report | `GET_VENDOR_TRAFFIC_REPORT` |
-| `vendor_inventory_report` | Report | `GET_VENDOR_INVENTORY_REPORT` |
+| `vendor_repeat_purchase_report` | Report | `GET_BRAND_ANALYTICS_REPEAT_PURCHASE_REPORT`, weekly |
+| `vendor_inventory_report` | Report | `GET_VENDOR_INVENTORY_REPORT` (manufacturing, per selling program) |
 | `vendor_forecasting_report` | Report | `GET_VENDOR_FORECASTING_REPORT` |
 | `vendor_sales_realtime_report` | Report | Real-time sales |
 | `vendor_inventory_realtime_report` | Report | Real-time inventory |
@@ -89,10 +80,9 @@ tap-amazon-vendor-central --config config.json --catalog catalog.json
 | `vendor_inventory_sourcing_report` | Report | Sourcing inventory |
 | `inventory_product_list` | Report | Product list from inventory report |
 | `inventory_product_sourcing_list` | Report | Sourcing product list |
-| `product_details` | Core | Product detail lookup |
-| `vendor_net_pure_product_margin_report_*` | Custom | Created from `custom_reports` (`NetPPM`) |
+| `product_details` | Core | Product detail lookup (child of inventory product lists) |
 
-Report streams are child streams of `vendor_marketplaces` and replicate on report end dates.
+Report streams are child streams of `vendor_marketplaces`. Most replicate on `report_end_date`. Sales, inventory, and forecasting reports iterate selling programs (`RETAIL`, `FRESH`, `BUSINESS`) and skip programs the account does not support.
 
 ## Developer resources
 
