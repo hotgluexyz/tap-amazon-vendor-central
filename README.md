@@ -1,6 +1,6 @@
 # tap-amazon-vendor-central
 
-`tap-amazon-vendor-central` is a Singer tap for [Amazon Vendor Central](https://vendorcentral.amazon.com/) via the [Selling Partner API](https://developer-docs.amazon.com/sp-api/). It is built with the [Meltano Singer SDK](https://sdk.meltano.com).
+`tap-amazon-vendor-central` is a Singer tap for [Amazon Vendor Central](https://vendorcentral.amazon.com/) via the [Selling Partner API](https://developer-docs.amazon.com/sp-api/).
 
 ## Installation
 
