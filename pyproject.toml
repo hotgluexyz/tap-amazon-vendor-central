@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "tap-amazon-vendor-central"
 version = "0.1.1"
-description = "`tap-amazon-vendor-central` is a Singer tap for Amazon-Seller, built with the Meltano SDK for Singer Taps."
+description = "Singer tap for Amazon Vendor Central via the Selling Partner API."
 authors = ["Adil Ahmed"]
 keywords = [
     "ELT",
@@ -18,18 +18,9 @@ typing-extensions = "4.7.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
-tox = "^3.24.4"
-flake8 = "^3.9.2"
-black = "^21.9b0"
-pydocstyle = "^6.1.1"
-mypy = "^0.910"
-types-requests = "^2.26.1"
-isort = "^5.10.1"
+tox = "^4.0"
+ruff = ">=0.15.0,<0.16.0"
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3 # Vertical Hanging Indent
-src_paths = "tap_amazon_seller"
 
 [build-system]
 requires = ["poetry-core==1.0.8"]

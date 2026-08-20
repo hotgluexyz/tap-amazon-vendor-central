@@ -1,6 +1,6 @@
 version: 1
 send_anonymous_usage_stats: true
-project_id: tap-amazon-seller
+project_id: tap-amazon-vendor-central
 plugins:
   extractors:
   - name: tap-amazon-vendor-central
