@@ -1,100 +1,110 @@
 # tap-amazon-vendor-central
 
-`tap-amazon-vendor-central` is a Singer tap for Amazon-Vendor-Central.
-
-Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
+`tap-amazon-vendor-central` is a Singer tap for [Amazon Vendor Central](https://vendorcentral.amazon.com/) via the [Selling Partner API](https://developer-docs.amazon.com/sp-api/).
 
 ## Installation
 
-- [ ] `Developer TODO:` Update the below as needed to correctly describe the install procedure. For instance, if you do not have a PyPi repo, or if you want users to directly install from your git repo, you can modify this step as appropriate.
+Clone the repo, create a virtual environment, and install with Poetry:
 
 ```bash
-pipx install tap-amazon-vendor-central
+git clone https://github.com/hotgluexyz/tap-amazon-vendor-central.git
+cd tap-amazon-vendor-central
+python -m venv .venv
+source .venv/bin/activate
+pip install poetry
+poetry install
 ```
 
 ## Configuration
 
-### Accepted Config Options
+| Field | Required | Description |
+|---|---|---|
+| `lwa_client_id` | Yes | Login with Amazon client ID |
+| `client_secret` | Yes | Login with Amazon client secret |
+| `refresh_token` | Yes | OAuth refresh token for the vendor account |
+| `aws_access_key` | No | AWS access key for SP-API signing (if not using role-based auth) |
+| `aws_secret_key` | No | AWS secret key for SP-API signing |
+| `role_arn` | No | IAM role ARN to assume for SP-API requests |
+| `sandbox` | No | Use the SP-API sandbox. Defaults to `false` |
+| `marketplaces` | No | List of marketplace IDs to sync. When omitted, marketplaces are derived from `uri` |
+| `uri` | No | Vendor Central portal URL for the account region (for example `https://vendorcentral.amazon.com`). Used to resolve marketplaces when `marketplaces` is not set |
+| `report_types` | No | Legacy report type filter (defaults vary by stream) |
+| `processing_status` | No | Report processing statuses to poll. Defaults to `IN_QUEUE`, `IN_PROGRESS` |
 
-- [ ] `Developer TODO:` Provide a list of config options accepted by the tap.
+Example `config.json`:
 
-A full list of supported settings and capabilities for this
-tap is available by running:
-
-```bash
-tap-amazon-vendor-central --about
+```json
+{
+  "lwa_client_id": "amzn1.application-oa2-client.xxxx",
+  "client_secret": "xxxx",
+  "refresh_token": "Atzr|xxxx",
+  "sandbox": false,
+  "uri": "https://vendorcentral.amazon.com"
+}
 ```
 
-### Source Authentication and Authorization
+Run `tap-amazon-vendor-central --about` for the full JSON schema.
 
-- [ ] `Developer TODO:` If your tap requires special access on the source system, or any special authentication requirements, provide those here.
+### Authentication
+
+The tap uses Login with Amazon (LWA) plus AWS SigV4 signing against the Selling Partner API. You need a registered SP-API application, vendor authorization, and either IAM user keys or a role ARN that can call SP-API on your behalf.
+
+Hotglue connections typically include `uri` from the linked Vendor Central account. The tap uses it to pick marketplaces in the same AWS region when `marketplaces` is not configured.
 
 ## Usage
-
-You can easily run `tap-amazon-vendor-central` by itself or in a pipeline using [Meltano](https://meltano.com/).
-
-### Executing the Tap Directly
 
 ```bash
 tap-amazon-vendor-central --version
 tap-amazon-vendor-central --help
-tap-amazon-vendor-central --config CONFIG --discover > ./catalog.json
+tap-amazon-vendor-central --config config.json --discover > catalog.json
+tap-amazon-vendor-central --config config.json --catalog catalog.json
 ```
 
-## Developer Resources
+## Streams
 
-- [ ] `Developer TODO:` As a first step, scan the entire project for the text "`TODO:`" and complete any recommended steps, deleting the "TODO" references once completed.
+| Stream | Type | Notes |
+|---|---|---|
+| `vendor_marketplaces` | Core | Parent stream for marketplace-scoped sync |
+| `vendor_purchase_orders` | Core | Vendor purchase orders |
+| `vendor_fulfilment_purchase_orders` | Core | Direct fulfilment purchase orders |
+| `vendor_fulfilment_customer_invoices` | Core | Direct fulfilment customer invoices |
+| `vendor_sales_report` | Report | `GET_VENDOR_SALES_REPORT` (manufacturing, per selling program) |
+| `vendor_traffic_report` | Report | `GET_VENDOR_TRAFFIC_REPORT` |
+| `vendor_repeat_purchase_report` | Report | `GET_BRAND_ANALYTICS_REPEAT_PURCHASE_REPORT`, weekly |
+| `vendor_inventory_report` | Report | `GET_VENDOR_INVENTORY_REPORT` (manufacturing, per selling program) |
+| `vendor_forecasting_report` | Report | `GET_VENDOR_FORECASTING_REPORT` |
+| `vendor_sales_realtime_report` | Report | Real-time sales |
+| `vendor_inventory_realtime_report` | Report | Real-time inventory |
+| `vendor_traffic_realtime_report` | Report | Real-time traffic |
+| `vendor_sales_sourcing_report` | Report | Sourcing sales |
+| `vendor_inventory_sourcing_report` | Report | Sourcing inventory |
+| `inventory_product_list` | Report | Product list from inventory report |
+| `inventory_product_sourcing_list` | Report | Sourcing product list |
+| `product_details` | Core | Product detail lookup (child of inventory product lists) |
 
-### Initialize your Development Environment
+Report streams are child streams of `vendor_marketplaces`. Most replicate on `report_end_date`. Sales, inventory, and forecasting reports iterate selling programs (`RETAIL`, `FRESH`, `BUSINESS`) and skip programs the account does not support.
+
+## Developer resources
+
+Requires Python 3.7 through 3.10 (see `pyproject.toml`).
+
+Lint and test with tox:
 
 ```bash
-pipx install poetry
-poetry install
+tox
 ```
 
-### Create and Run Tests
-
-Create tests within the `tap_amazon_seller/tests` subfolder and
-  then run:
+Or run tools directly:
 
 ```bash
-poetry run pytest
+poetry run ruff check .
+poetry run pytest tap_amazon_vendor_central/tests/
+poetry run tap-amazon-vendor-central --about
 ```
 
-You can also test the `tap-amazon-vendor-central` CLI interface directly using `poetry run`:
+CI runs ruff and pytest on pull requests (`.github/workflows/lint.yml`).
 
-```bash
-poetry run tap-amazon-vendor-central --help
-```
+Related repos:
 
-### Testing with [Meltano](https://www.meltano.com)
-
-_**Note:** This tap will work in any Singer environment and does not require Meltano.
-Examples here are for convenience and to streamline end-to-end orchestration scenarios._
-
-Your project comes with a custom `meltano.yml` project file already created. Open the `meltano.yml` and follow any _"TODO"_ items listed in
-the file.
-
-Next, install Meltano (if you haven't already) and any needed plugins:
-
-```bash
-# Install meltano
-pipx install meltano
-# Initialize meltano within this directory
-cd tap-amazon-vendor-central
-meltano install
-```
-
-Now you can test and orchestrate using Meltano:
-
-```bash
-# Test invocation:
-meltano invoke tap-amazon-vendor-central --version
-# OR run a test `elt` pipeline:
-meltano elt tap-amazon-vendor-central target-jsonl
-```
-
-### SDK Dev Guide
-
-See the [dev guide](https://sdk.meltano.com/en/latest/dev_guide.html) for more instructions on how to use the SDK to 
-develop your own taps and targets.
+- [`tap-amazon-seller`](https://github.com/hotgluexyz/tap-amazon-seller): Seller Central variant of this tap family
+- [Amazon SP-API docs](https://developer-docs.amazon.com/sp-api/)
