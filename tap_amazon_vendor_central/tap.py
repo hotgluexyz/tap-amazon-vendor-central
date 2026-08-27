@@ -5,6 +5,11 @@ from typing import List
 from singer_sdk import Stream, Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
+from tap_amazon_vendor_central.replenishment_streams import (
+    VendorReplenishmentDailyMetricsStream,
+    VendorReplenishmentRollingMetricsStream,
+    VendorReplenishmentOfferMetricsStream,
+)
 from tap_amazon_vendor_central.streams import (
     AmazonSellerStream,
     MarketplacesStream,
@@ -46,6 +51,9 @@ STREAM_TYPES = [
     VendorsSalesSourcingReportStream,
     VendorsInventorySourcingReportStream,
     InventoryProductsSourcingListStream,
+    VendorReplenishmentDailyMetricsStream,
+    VendorReplenishmentRollingMetricsStream,
+    VendorReplenishmentOfferMetricsStream,
 ]
 
 
