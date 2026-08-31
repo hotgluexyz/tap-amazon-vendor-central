@@ -35,8 +35,14 @@ from singer_sdk import typing as th
 from sp_api.base import Marketplaces
 
 from tap_amazon_vendor_central.client import AmazonSellerStream
-from tap_amazon_vendor_central.exceptions import report_giveup
+from tap_amazon_vendor_central.exceptions import (
+    InvalidReportParameter,
+    PermissionError,
+    report_giveup,
+)
 from tap_amazon_vendor_central.streams import MarketplacesStream
+from tap_amazon_vendor_central.utils import InvalidResponse
+from sp_api.base.exceptions import SellingApiBadRequestException, SellingApiForbiddenException
 
 PROGRAM_TYPES = ["SUBSCRIBE_AND_SAVE"]
 TIME_PERIOD_TYPE = "PERFORMANCE"
@@ -172,6 +178,14 @@ class ReplenishmentStreamBase(AmazonSellerStream):
             return minimum_start
         return start_date
 
+    def translate_replenishment_error(self, exc: Exception) -> None:
+        """Map SP-API errors to tap exceptions for giveup and child-stream handling."""
+        if isinstance(exc, SellingApiForbiddenException):
+            raise PermissionError(exc.error or exc.message or str(exc)) from exc
+        if isinstance(exc, SellingApiBadRequestException):
+            raise InvalidReportParameter(exc.error or exc.message or str(exc)) from exc
+        raise InvalidResponse(exc) from exc
+
     @backoff.on_exception(
         backoff.expo,
         Exception,
@@ -187,14 +201,17 @@ class ReplenishmentStreamBase(AmazonSellerStream):
     ) -> dict:
         """Call getSellingPartnerMetrics for a marketplace."""
         client = self.get_sp_replenishment(marketplace_code)
-        response = client.get_selling_partner_metrics(
-            marketplaceId=self.get_marketplace_api_id(marketplace_code),
-            timePeriodType=TIME_PERIOD_TYPE,
-            programTypes=PROGRAM_TYPES,
-            timeInterval=time_interval,
-            aggregationFrequency=AGGREGATION_DAY,
-            metrics=metrics,
-        )
+        try:
+            response = client.get_selling_partner_metrics(
+                marketplaceId=self.get_marketplace_api_id(marketplace_code),
+                timePeriodType=TIME_PERIOD_TYPE,
+                programTypes=PROGRAM_TYPES,
+                timeInterval=time_interval,
+                aggregationFrequency=AGGREGATION_DAY,
+                metrics=metrics,
+            )
+        except Exception as exc:
+            self.translate_replenishment_error(exc)
         return response.payload
 
 
@@ -314,16 +331,19 @@ class VendorReplenishmentOfferMetricsStream(ReplenishmentStreamBase):
     ) -> dict:
         """Fetch one page of listOfferMetrics."""
         client = self.get_sp_replenishment(marketplace_code)
-        response = client.list_offer_metrics(
-            pagination={"limit": OFFER_PAGE_SIZE, "offset": offset},
-            filters={
-                "timePeriodType": TIME_PERIOD_TYPE,
-                "programTypes": PROGRAM_TYPES,
-                "marketplaceId": self.get_marketplace_api_id(marketplace_code),
-                "timeInterval": time_interval,
-                "aggregationFrequency": AGGREGATION_DAY,
-            },
-        )
+        try:
+            response = client.list_offer_metrics(
+                pagination={"limit": OFFER_PAGE_SIZE, "offset": offset},
+                filters={
+                    "timePeriodType": TIME_PERIOD_TYPE,
+                    "programTypes": PROGRAM_TYPES,
+                    "marketplaceId": self.get_marketplace_api_id(marketplace_code),
+                    "timeInterval": time_interval,
+                    "aggregationFrequency": AGGREGATION_DAY,
+                },
+            )
+        except Exception as exc:
+            self.translate_replenishment_error(exc)
         return response.payload
 
     def iter_offers_for_day(
@@ -339,6 +359,8 @@ class VendorReplenishmentOfferMetricsStream(ReplenishmentStreamBase):
                 break
             for offer in offers:
                 yield offer
+            if len(offers) < OFFER_PAGE_SIZE:
+                break
             offset += len(offers)
 
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
