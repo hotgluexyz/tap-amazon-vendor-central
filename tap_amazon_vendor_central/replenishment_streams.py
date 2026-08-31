@@ -49,6 +49,7 @@ TIME_PERIOD_TYPE = "PERFORMANCE"
 AGGREGATION_DAY = "DAY"
 MAX_DAY_CHUNK = 31
 OFFER_PAGE_SIZE = 100
+MAX_OFFER_OFFSET = 9000
 
 DAILY_PERFORMANCE_METRICS = [
     "SHIPPED_SUBSCRIPTION_UNITS",
@@ -361,7 +362,16 @@ class VendorReplenishmentOfferMetricsStream(ReplenishmentStreamBase):
                 yield offer
             if len(offers) < OFFER_PAGE_SIZE:
                 break
-            offset += len(offers)
+            next_offset = offset + len(offers)
+            if next_offset > MAX_OFFER_OFFSET:
+                if len(offers) == OFFER_PAGE_SIZE:
+                    self.logger.warning(
+                        f"listOfferMetrics offset limit ({MAX_OFFER_OFFSET}) reached for "
+                        f"{marketplace_code} on {time_interval['startDate']}. "
+                        "Remaining offers were not fetched."
+                    )
+                break
+            offset = next_offset
 
     def get_records(self, context: Optional[dict]) -> Iterable[dict]:
         marketplace_code = context.get("marketplace_id")
