@@ -4,6 +4,8 @@
 from typing import Any, List, Optional, cast
 
 from singer_sdk.streams import Stream
+import os
+os.environ["ENV_DISABLE_DONATION_MSG"] = "1"
 from sp_api.api import (
     Finances,
     Inventories,
@@ -18,7 +20,6 @@ from sp_api.api import (
 )
 from sp_api.base import Marketplaces
 import csv
-import os
 import time
 from tap_amazon_vendor_central.utils import InvalidResponse
 import json

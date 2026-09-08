@@ -125,6 +125,10 @@ VALID_URIS = [
           {
             "name": "JP",
             "value": "https://vendorcentral.amazon.co.jp"
+          },
+          {
+            "name": "IE",
+            "value": "https://vendorcentral.amazon.ie"
           }
         ]
 
