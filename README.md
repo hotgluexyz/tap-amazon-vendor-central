@@ -81,8 +81,25 @@ tap-amazon-vendor-central --config config.json --catalog catalog.json
 | `inventory_product_list` | Report | Product list from inventory report |
 | `inventory_product_sourcing_list` | Report | Sourcing product list |
 | `product_details` | Core | Product detail lookup (child of inventory product lists) |
+| `vendor_replenishment_daily_metrics` | Replenishment | Daily Subscribe & Save partner KPIs (`getSellingPartnerMetrics`, incremental) |
+| `vendor_replenishment_rolling_metrics` | Replenishment | Rolling partner metrics (LTV, retention, etc.; full sync) |
+| `vendor_replenishment_offer_metrics` | Replenishment | Per-ASIN daily offer metrics (`listOfferMetrics`, incremental) |
 
 Report streams are child streams of `vendor_marketplaces`. Most replicate on `report_end_date`. Sales, inventory, and forecasting reports iterate selling programs (`RETAIL`, `FRESH`, `BUSINESS`) and skip programs the account does not support.
+
+### Replenishment (Subscribe & Save)
+
+Child streams of `vendor_marketplaces`. All use `timePeriodType=PERFORMANCE` and `programTypes=SUBSCRIBE_AND_SAVE`. DAY aggregation, same lag as report streams (`correct_end_date_minus_days=2`).
+
+Amazon's [getSellingPartnerMetrics](https://developer-docs.amazon.com/sp-api/reference/getsellingpartnermetrics) mixes daily KPIs and rolling-window metrics in one response. This tap splits them:
+
+| Stream | Sync | API | What it contains |
+|---|---|---|---|
+| `vendor_replenishment_daily_metrics` | Incremental (`report_end_date`) | `getSellingPartnerMetrics` | Daily partner KPIs: revenue, units shipped, active subscriptions, OOS impact, coupon fields |
+| `vendor_replenishment_rolling_metrics` | Full table | `getSellingPartnerMetrics` | Rolling metrics: subscriber averages, retention, LTV by segment, signup conversion, revenue by deliveries, seller-funding penetration. Intervals are defined by Amazon |
+| `vendor_replenishment_offer_metrics` | Incremental (`report_end_date`) | [listOfferMetrics](https://developer-docs.amazon.com/sp-api/reference/listoffermetrics) | Per-ASIN daily metrics (one API day per request, paginated) |
+
+FORECAST is not supported for vendors on these endpoints.
 
 ## Developer resources
 

@@ -13,6 +13,7 @@ from sp_api.api import (
     ReportsV2,
     Reports,
     Catalog,
+    Replenishment,
     VendorDirectFulfillmentOrders,
     VendorDirectFulfillmentShipping,
     VendorOrders,
@@ -347,6 +348,14 @@ class AmazonSellerStream(Stream):
         if marketplace_id is None:
             marketplace_id = self.config.get("marketplace", "US")
         return VendorOrders(
+            credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
+        )
+
+    def get_sp_replenishment(self, marketplace_id=None):
+        """Return a Replenishment API client for the given marketplace code."""
+        if marketplace_id is None:
+            marketplace_id = self.config.get("marketplace", "US")
+        return Replenishment(
             credentials=self.get_credentials(), marketplace=Marketplaces[marketplace_id]
         )
 
